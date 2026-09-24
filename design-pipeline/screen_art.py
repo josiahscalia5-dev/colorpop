@@ -428,3 +428,136 @@ def diff_matte(img, bg, region, lo=10.0, hi=40.0, feather=0.8):
     F = np.clip(F, 0, 255)
     y0, y1, x0, x1 = bbox(a > 0.01, 2, img.shape)
     return np.dstack([F[y0:y1, x0:x1], a[y0:y1, x0:x1] * 255]), (int(x0), int(y0))
+
+
+# ---------------------------------------------------------------- compositing like the app
+def hides_mask(shape, opening, edge):
+    """True where the front rim hides a character standing in this hole (as LevelScreen.Hole.hides)."""
+    Y, X = grid(shape)
+    cx, cy, a, b = opening
+    ys = np.array(edge['y']); x0 = edge['x0']
+    xi = np.clip(np.round(X - 0.5 - x0).astype(int), 0, len(ys) - 1)
+    ey = ys[xi]
+    out = (Y >= cy) & ((X < cx - a) | (X > cx + a) | (Y >= ey))
+    return out
+
+
+def composite(base, layers):
+    """Draw RGBA layers [(rgba, x, y, visible_mask_or_None)] over base (float RGB)."""
+    out = base.copy()
+    H, W = base.shape[:2]
+    for rgba, x, y, vis in layers:
+        h, w = rgba.shape[:2]
+        x0, y0 = max(0, x), max(0, y); x1, y1 = min(W, x + w), min(H, y + h)
+        if x0 >= x1 or y0 >= y1:
+            continue
+        s = rgba[y0 - y:y1 - y, x0 - x:x1 - x]
+        a = s[..., 3:4] / 255.0
+        if vis is not None:
+            a = a * vis[y0:y1, x0:x1, None]
+        out[y0:y1, x0:x1] = out[y0:y1, x0:x1] * (1 - a) + s[..., :3] * a
+    return out
+
+
+def matte_sprite(img, bg, region, core, edge=None, ext=30, lo=8.0, hi=36.0):
+    """A character: difference matte of img over bg inside region, solid (alpha 1) on core. With
+    an edge, the body colour continues `ext` px straight down below the front rim (so it can rise
+    above its reference pose without a gap; the rim clip hides it at rest)."""
+    rgba, (x0, y0) = diff_matte(img, bg, region, lo, hi)
+    h, w = rgba.shape[:2]
+    c = core[y0:y0 + h, x0:x0 + w]
+    rgba[..., :3][c] = img[y0:y0 + h, x0:x0 + w][c]
+    rgba[..., 3][c] = 255
+    if edge is not None:
+        f = edge_fn(edge)
+        extra = np.zeros((ext + 4, w, 4)); rgba = np.concatenate([rgba, extra], 0)
+        for j in range(w):
+            xg = x0 + j
+            e = f(xg)
+            if e is None:
+                continue
+            col = np.where(core[:, xg])[0] if 0 <= xg < core.shape[1] else []
+            if len(col) == 0 or abs(col.max() - e) > 6:
+                continue
+            yb = col.max()
+            src = img[max(0, yb - 4):yb - 1, xg].mean(0)
+            start = int(min(yb, e)) - 1 - y0
+            for yy in range(max(0, start), rgba.shape[0]):
+                rgba[yy, j, :3] = src * (1 - 0.35 * max(0, yy - start) / ext)
+                rgba[yy, j, 3] = 255
+    return rgba, (int(x0), int(y0))
+
+
+# ---------------------------------------------------------------- lettering (same drawing as the app's OutlineText)
+FONT_PATH = os.path.join(ROOT, 'design-pipeline', 'fonts', 'LilitaOne-Regular.ttf')
+
+
+def draw_text(img, text, spec, S=4):
+    """spec: box (x0,y0,x1,y1 of the digit ink), align left|center|right, size (px), scale_x, outline
+    (px outside the glyph), shadow (px, outline repeated lower), rotate (deg, around the ink centre),
+    fill_top, fill_bottom, outline_color (RGB)."""
+    from PIL import ImageFont, ImageDraw
+    H, W = img.shape[:2]
+    x0, y0, x1, y1 = spec['box']
+    size = spec['size'] * S
+    font = ImageFont.truetype(FONT_PATH, int(round(size)))
+    stroke = max(1, int(round(spec['outline'] * S)))
+    lw, lh = int(font.getlength(text) + 8 * stroke), int(size * 1.6)
+
+    def mask(extra):
+        m = Image.new('L', (lw, lh), 0)
+        ImageDraw.Draw(m).text((4 * stroke, 0), text, font=font, fill=255, stroke_width=extra, stroke_fill=255)
+        return m.resize((max(1, int(lw * spec.get('scale_x', 1.0))), lh), Image.LANCZOS)
+    fa = np.asarray(mask(0)).astype(np.float32) / 255
+    oa = np.asarray(mask(stroke)).astype(np.float32) / 255
+    ys, xs = np.where(fa > 0.5)
+    gy0, gy1, gx0, gx1 = ys.min(), ys.max() + 1, xs.min(), xs.max() + 1
+    al = spec.get('align', 'left')
+    if al == 'left':
+        tx = x0 * S - gx0
+    elif al == 'right':
+        tx = x1 * S - gx1
+    else:
+        tx = ((x0 + x1) / 2) * S - (gx0 + gx1) / 2
+    ty = y0 * S - gy0
+    big = cv2.resize(img.astype(np.float32), (W * S, H * S), interpolation=cv2.INTER_CUBIC)
+    rot = spec.get('rotate', 0.0)
+    cxr, cyr = tx + (gx0 + gx1) / 2, ty + (gy0 + gy1) / 2
+
+    def place(a, oy):
+        M = np.float32([[1, 0, tx], [0, 1, ty + oy]])
+        if rot:
+            R = cv2.getRotationMatrix2D((float(cxr), float(cyr)), -rot, 1.0)
+            M = (np.vstack([R, [0, 0, 1]]) @ np.vstack([M, [0, 0, 1]]))[:2].astype(np.float32)
+        return cv2.warpAffine(a, M, (W * S, H * S))[..., None]
+    oc = np.array(spec.get('outline_color', (6, 12, 28)), np.float32)
+    for oy in ((spec.get('shadow', 0) * S, 0) if spec.get('shadow', 0) else (0,)):
+        aa = place(oa, oy); big = big * (1 - aa) + oc * aa
+    aa = place(fa, 0)
+    t = np.clip((np.arange(H * S)[:, None, None] - (ty + gy0)) / max(gy1 - gy0, 1), 0, 1)
+    ft = np.array(spec.get('fill_top', (255, 255, 255)), np.float32); fb = np.array(spec.get('fill_bottom', (236, 238, 244)), np.float32)
+    big = big * (1 - aa) + (ft * (1 - t) + fb * t) * aa
+    return cv2.resize(big, (W, H), interpolation=cv2.INTER_AREA).astype(np.float64)
+
+
+def calibrate_text(ref, base, text, spec, grid_=None, margin=10):
+    """Grid-search the lettering parameters so draw_text(base) matches ref around the box."""
+    x0, y0, x1, y1 = spec['box']
+    cy0, cy1, cx0, cx1 = max(0, y0 - margin), y1 + margin + 6, max(0, x0 - margin), x1 + margin
+    sub_b = base[cy0:cy1, cx0:cx1]; sub_r = ref[cy0:cy1, cx0:cx1]
+
+    def err(sp):
+        s2 = dict(sp, box=(x0 - cx0, y0 - cy0, x1 - cx0, y1 - cy0))
+        return float(np.abs(draw_text(sub_b, text, s2) - sub_r).mean())
+    best = (err(spec), dict(spec))
+    grid_ = grid_ or {}
+    import itertools
+    keys = list(grid_)
+    for combo in itertools.product(*[grid_[k] for k in keys]):
+        cand = dict(spec)
+        for k, v in zip(keys, combo):
+            cand[k] = v(spec) if callable(v) else v
+        e = err(cand)
+        if e < best[0]:
+            best = (e, cand)
+    return best

@@ -121,7 +121,9 @@ COMBO_SPLIT_Y = 431                    # above: the live "3x", below: the word C
 HINT_POLY = [(88, 1150), (250, 1060), (380, 960), (440, 880), (520, 850), (590, 900), (590, 1000),
              (570, 1030), (655, 1140), (655, 1268), (560, 1268), (430, 1175), (300, 1150), (160, 1215), (88, 1222)]
 WISP_POLY = [(255, 838), (380, 838), (384, 915), (318, 915), (255, 905)]
-BURST_POLY = [(328, 700), (372, 636), (470, 640), (505, 712), (492, 800), (440, 856), (372, 848), (332, 786)]
+BURST_POLY = [(300, 712), (330, 660), (385, 585), (455, 585), (470, 640), (515, 700), (520, 790), (480, 850),
+              (420, 870), (340, 860), (296, 800)]
+BEHIND_POLY = [(372, 818), (490, 818), (492, 890), (372, 890)]     # debris / sparks behind the centre purple
 SPECKS = [(128, 1068, 168, 1110), (205, 1040, 240, 1062)]
 
 
@@ -149,7 +151,7 @@ def build():
         frame |= rect_mask(I.shape, r)
     hint = poly_mask(I.shape, HINT_POLY)
     fx_hint = hint | effect_pixels(dilate(hint, 12))
-    fx_other = poly_mask(I.shape, WISP_POLY) | poly_mask(I.shape, BURST_POLY)
+    fx_other = poly_mask(I.shape, WISP_POLY) | poly_mask(I.shape, BURST_POLY) | poly_mask(I.shape, BEHIND_POLY)
     for r in SPECKS:
         fx_other |= effect_pixels(rect_mask(I.shape, r))
     hsvm = HSV
@@ -183,7 +185,8 @@ def rebuild(masks, frame, dyn, flat):
     for hk in order:
         hd = {'inner': HOLES[hk]['inner'], 'outer': HOLES[hk]['outer']}
         donors = [dict(inner=HOLES[d]['inner'], outer=HOLES[d]['outer'], mirror=mi) for d, mi in
-                  (('h7', False), ('h7', True), ('h5', False), ('h6', False), ('h2', False), ('h3', False)) if d != hk]
+                  ((hk, True), ('h7', False), ('h7', True), ('h5', False), ('h6', False), ('h2', False), ('h3', False))
+                  if not (d == hk and not mi) and not (d == hk and hk != 'h7')]   # only the big front hole mirrors itself
         g, cov = hole_guidance(B, hd, donors, bad & ~covered, bad)
         guide[cov] = g[cov]; covered |= cov
     # 3. everything else hidden: patch fill from nearby clean pixels (not from the rims)
@@ -197,10 +200,102 @@ def rebuild(masks, frame, dyn, flat):
     for part, src in ((rest & ~grass & ~upper, dirt_src), (rest & grass, ~bad & ~rings & (Y > 1150)), (upper, ~bad & ~rings & (Y <= 640))):
         if part.any():
             filled = exemplar_fill(guide, part, src, ps=13)
-            guide[part] = filled[part]
+            # soften the patch seams (the reference dirt is soft anyway)
+            soft = cv2.GaussianBlur(filled.astype(np.float32), (0, 0), 1.1).astype(np.float64)
+            guide[part] = soft[part]
     # 4. one Poisson merge over everything rebuilt (removes seams and lighting steps)
     B = merge_region(B, guide, (bad & ~frame) | (covered & ~frame))
+    # colour of a character / effect that leaked into the rebuilt dirt (pink, purple): re-solve those
+    # pixels keeping only their fine texture, the tone from the clean surroundings
+    hb = hsv(B)
+    leak = (bad & ~frame) & (hb[..., 0] >= 125) & (hb[..., 0] <= 178) & (hb[..., 1] > 35) & (Y > 560)
+    leak = dilate(leak, 3) & (bad & ~frame)
+    for comp in connected(leak):
+        y0, y1, x0, x1 = bbox(comp, 3, I.shape)
+        reg = B[y0:y1, x0:x1]
+        hp = reg - cv2.GaussianBlur(reg.astype(np.float32), (0, 0), 2.0).astype(np.float64)
+        B[y0:y1, x0:x1] = poisson_merge(reg, hp, comp[y0:y1, x0:x1])
     return B
+
+
+COMBO_NUMBER = {'box': (497, 382, 572, 430), 'align': 'center', 'text': '3x'}
+RULES = {'duration': 30, 'goal': 12, 'target': 'purple', 'combo': True, 'swipe': True, 'bombs': 0.0,
+         'mix': {'target': 0.55, 'distractor': 0.45}, 'hold': [1.1, 1.5], 'gap': [0.45, 0.75], 'up_max': [2, 3],
+         'reference_state': {'elapsed': 12.0, 'targets_left': 8, 'score': 320, 'combo': 3}}
+
+
+def export(masks, edges, openings, B, parts):
+    import json
+    from levels.export import sprite_entry, calibrate_digits, write_level
+    rel = NAME
+    level = {'id': 3, 'art': {'w': W, 'h': H}, 'content': {'top': 92, 'bottom': 1380}}
+    # background, with 24 px of blurred reflection each side (only seen on wide screens)
+    PAD = 24
+    full = cv2.copyMakeBorder(B.astype(np.float32), 0, 0, PAD, PAD, cv2.BORDER_REFLECT_101)
+    soft = cv2.GaussianBlur(full, (0, 0), 6)
+    ramp = np.clip((np.abs(np.arange(W + 2 * PAD) - (W + 2 * PAD - 1) / 2) - (W / 2 - 1)) / PAD, 0, 1)[None, :, None]
+    save_png(os.path.join(OUT, 'bg.png'), full * (1 - ramp) + soft * ramp)
+    level['bg'] = {'file': rel + '/bg.png', 'pad_side': PAD, 'pad_top': 0, 'pad_bottom': 0}
+    level['holes'] = {hk: {'opening': list(openings[hk]), 'edge': edges[hk]} for hk in sorted(HOLES)}
+    # characters: difference matte over their removal region, solid on the body
+    level['chars'] = {}
+    layers = []
+    for k, c in CHARS.items():
+        hk = c['hole']
+        region = char_region(k, masks[k])
+        rgba, xy = matte_sprite(I, B, region, masks[k], edges[hk], ext=30)
+        e = sprite_entry(OUT, 'char_' + k, rgba, xy, rel)
+        e.update({'hole': hk, 'color': c['colour'], 'role': c['role']})
+        if c.get('intro_only'):
+            e['intro_only'] = True
+        level['chars'][k] = e
+        vis = ~hides_mask(I.shape, openings[hk], edges[hk])
+        layers.append((rgba, xy[0], xy[1], vis))
+    with_chars = composite(B, layers)
+    # effects over the characters: the swipe hint (hand, trail, gem, sparks) and the hit burst
+    hint_region = dilate(parts['fx_hint'] | poly_mask(I.shape, WISP_POLY) | poly_mask(I.shape, BEHIND_POLY), 2)
+    rgba, xy = diff_matte(I, with_chars, hint_region)
+    level['hint'] = sprite_entry(OUT, 'hint', rgba, xy, rel)
+    layers.append((rgba, xy[0], xy[1], None))
+    rgba, xy = diff_matte(I, with_chars, dilate(poly_mask(I.shape, BURST_POLY), 2))
+    level['burst'] = sprite_entry(OUT, 'burst', rgba, xy, rel)
+    level['burst']['anchor'] = [410, 760]          # centre of the flash
+    layers.append((rgba, xy[0], xy[1], None))
+    # combo badge: the word as art, the number live
+    word = parts['combo'] & (Y >= COMBO_SPLIT_Y - 2)
+    rgba, xy = diff_matte(I, B, word)
+    level['combo'] = {'word': sprite_entry(OUT, 'combo_word', rgba, xy, rel)}
+    layers.append((rgba, xy[0], xy[1], None))
+    # pause button
+    pm = ellipse_mask(I.shape, (PAUSE['cx'], PAUSE['cy'], PAUSE['r'] + 2, PAUSE['r'] + 2))
+    rgba, xy = cut_sprite(I, pm, feather=0.8)
+    level['pause'] = sprite_entry(OUT, 'pause', rgba, xy, rel)
+    level['pause']['hit'] = dict(PAUSE)
+    layers.append((rgba, xy[0], xy[1], None))
+    scene = composite(B, layers)
+    # live numbers
+    print(' calibrating lettering')
+    level['live_text'] = calibrate_digits(I, scene, DIGITS)
+    for k in level['live_text']:
+        level['live_text'][k].pop('text', None)
+    num = dict(COMBO_NUMBER, fill_top=[252, 238, 150], fill_bottom=[244, 150, 22], outline_color=[52, 24, 8],
+               size=round((COMBO_NUMBER['box'][3] - COMBO_NUMBER['box'][1]) / 0.72, 1), scale_x=0.95, outline=5.0, shadow=2.0, rotate=0.0)
+    e0 = calibrate_text(I, scene, '3x', num, {})[0]
+    e, best = calibrate_text(I, scene, '3x', num, {'outline': [4.0, 5.5, 7.0], 'shadow': [0.0, 2.5], 'rotate': [-6.0, -3.0, 0.0],
+                                                  'scale_x': [0.88, 0.96, 1.04],
+                                                  'size': [lambda s, f=f: round(s['size'] * f, 1) for f in (0.95, 1.0, 1.05)]})
+    print('   combo    3x     error %.1f -> %.1f  %s' % (e0, e, {k: best[k] for k in ('size', 'scale_x', 'outline', 'shadow', 'rotate')}))
+    best.pop('text', None)
+    level['combo']['number'] = {k: (round(v, 3) if isinstance(v, float) else v) for k, v in best.items()}
+    level['rules'] = RULES
+    write_level(NAME, level)
+    # the reference moment rebuilt from the parts (checked by compare_screens.py)
+    for key, t in (('timer', '00:18'), ('target', '8'), ('score', '320')):
+        scene = draw_text(scene, t, level['live_text'][key])
+    scene = draw_text(scene, '3x', level['combo']['number'])
+    save_png(work('l3_rebuilt_reference.png'), scene)
+    d = np.abs(scene - I).mean(-1)
+    print(' rebuilt reference vs reference: mean diff %.2f/255, %.2f%% px off by >40' % (d[92:1380].mean(), (d[92:1380] > 40).mean() * 100))
 
 
 if __name__ == '__main__':
@@ -208,8 +303,12 @@ if __name__ == '__main__':
     t0 = time.time()
     masks, edges, openings, frame, dyn, fx_hint, fx_other, combo, pause, digits = build()
     print('masks', {k: int(m.sum()) for k, m in masks.items()}, 'dyn px', int(dyn.sum()), '%.1fs' % (time.time() - t0))
-    B = rebuild(masks, frame, dyn, digits | pause)
-    print('rebuilt %.1fs' % (time.time() - t0))
-    np.save(work('l3_bg.npy'), B)
-    np.savez_compressed(work('l3_parts.npz'), dyn=dyn, fx_hint=fx_hint, fx_other=fx_other, combo=combo, pause=pause, frame=frame, **{'m_' + k: m for k, m in masks.items()})
-    save_png(work('l3_bg.png'), B)
+    if '--reuse-bg' in sys.argv and os.path.exists(work('l3_bg.npy')):
+        B = np.load(work('l3_bg.npy'))
+    else:
+        B = rebuild(masks, frame, dyn, digits | pause)
+        np.save(work('l3_bg.npy'), B)
+        save_png(work('l3_bg.png'), B)
+    print('background %.1fs' % (time.time() - t0))
+    export(masks, edges, openings, B, {'fx_hint': fx_hint, 'fx_other': fx_other, 'combo': combo})
+    print('done %.1fs' % (time.time() - t0))
