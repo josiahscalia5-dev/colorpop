@@ -1,12 +1,12 @@
 import numpy as np, cv2, json, time
 from PIL import Image
 from common import *
-OUT = '/home/claude/out/level'
-bgA = np.load('/home/claude/out/_lvl_bgA.npy')
-base = np.load('/home/claude/out/_lvl_base.npy')
+from paths import work, data
+bgA = np.load(work('lvl_bgA.npy'))
+base = np.load(work('lvl_base.npy'))
 H, W = bgA.shape[:2]
-G = json.load(open('/home/claude/out/_lvl_geom.json')); HOLES, CHARS = G['HOLES'], G['CHARS']
-M = dict(np.load('/home/claude/out/_lvl_masks.npz'))
+G = json.load(open(data('_lvl_geom.json'))); HOLES, CHARS = G['HOLES'], G['CHARS']
+M = dict(np.load(data('_lvl_masks.npz')))
 charm = np.zeros((H, W), bool)
 for k in CHARS: charm |= M[k]
 charm = cv2.dilate(charm.astype(np.uint8), np.ones((5, 5), np.uint8)).astype(bool)
@@ -111,7 +111,7 @@ for hk, g in HOLES.items():
     reg[:] = reg * (1 - w) + colr * w
     canvas[y0:y1, x0:x1] = reg
 out = np.clip(canvas, 0, 255).astype(np.uint8)
-np.save('/home/claude/out/_lvl_bg_holes.npy', out)
-Image.fromarray(out).save(OUT + '/_bg_holes_prev.png')
-Image.fromarray(out[540:]).resize((W // 1, (HH - 540))).save('/home/claude/art/_lvl_holes.png')
+np.save(work('lvl_bg_holes.npy'), out)
+Image.fromarray(out).save(work('lvl_bg_holes_prev.png'))
+Image.fromarray(out[540:]).resize((W // 1, (HH - 540))).save(work('lvl_holes.png'))
 print(out.shape)

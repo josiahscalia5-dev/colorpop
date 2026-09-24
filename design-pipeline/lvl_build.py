@@ -1,12 +1,13 @@
 import numpy as np, cv2, json, time, os
 from PIL import Image
 from common import *
-OUT = '/home/claude/out/level'; os.makedirs(OUT, exist_ok=True)
-a = fix_edges(np.asarray(Image.open('/home/claude/art/lvl_crop.png').convert('RGB')).copy())
+from paths import ref, work, data, asset_dir
+OUT = asset_dir('level', 'characters')
+a = fix_edges(np.asarray(Image.open(ref('lvl_crop.png')).convert('RGB')).copy())
 H, W = a.shape[:2]
-G = json.load(open('/home/claude/out/_lvl_geom.json'))
+G = json.load(open(data('_lvl_geom.json')))
 HOLES, CHARS = G['HOLES'], G['CHARS']
-M = dict(np.load('/home/claude/out/_lvl_masks.npz'))
+M = dict(np.load(data('_lvl_masks.npz')))
 t0 = time.time()
 # ---------- 1. clean status bar + bezel corners ----------
 clean = status_and_corner_mask(a, [(44, 18, 110, 54), (448, 14, 588, 52)])
@@ -50,7 +51,7 @@ charm = np.zeros((H, W), bool)
 for k in CHARS: charm |= M[k]
 charm = cv2.dilate(charm.astype(np.uint8), np.ones((5, 5), np.uint8)).astype(bool)
 bgA = inpaint(base, charm, 'fsr_fast')
-np.save('/home/claude/out/_lvl_bgA.npy', bgA)
-np.save('/home/claude/out/_lvl_base.npy', base)
+np.save(work('lvl_bgA.npy'), bgA)
+np.save(work('lvl_base.npy'), base)
 json.dump(meta, open(OUT + '/_meta.json', 'w'), indent=1)
 print('done', round(time.time() - t0, 1))

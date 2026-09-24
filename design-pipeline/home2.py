@@ -2,9 +2,10 @@ import numpy as np, cv2, json, time
 from PIL import Image
 from common import *
 from radial import radial_fill
-OUT = '/home/claude/out/home'
-base = np.asarray(Image.open(OUT + '/_base_clean.png').convert('RGB'))
-bg = np.asarray(Image.open(OUT + '/_bg_core.png').convert('RGB')).copy()
+from paths import work, asset_dir
+OUT = asset_dir('home')
+base = np.asarray(Image.open(work('home_base_clean.png')).convert('RGB'))
+bg = np.asarray(Image.open(work('home_bg_core.png')).convert('RGB')).copy()
 H, W = bg.shape[:2]
 CX, CY = 314, 300
 # HUD zone (coin pill + gear): refill along light rays instead of generic inpaint
@@ -17,7 +18,7 @@ sm = cv2.GaussianBlur(bg2, (0, 0), 2.0)
 w = cv2.GaussianBlur(hud.astype(np.float32), (0, 0), 1.5)[..., None]
 bg2 = (bg2 * (1 - w) + sm * w).astype(np.uint8)
 bg[:170] = bg2[:170]
-Image.fromarray(bg).save(OUT + '/_bg_core2.png')
+Image.fromarray(bg).save(work('home_bg_core2.png'))
 
 # ---- upward extension projected along the rays ----
 PT = 400
@@ -45,9 +46,9 @@ PS = 24
 full = cv2.copyMakeBorder(full, 0, 0, PS, PS, cv2.BORDER_REPLICATE)
 edge = cv2.GaussianBlur(full, (0, 0), 6)
 full[:, :PS] = edge[:, :PS]; full[:, -PS:] = edge[:, -PS:]
-Image.fromarray(full).save(OUT + '/_bg_full.png')
+Image.fromarray(full).save(OUT + '/bg_full.png')
 m = json.load(open(OUT + '/_meta.json'))
 m['_bg'] = dict(pad_top=PT, pad_side=PS, art_w=W, art_h=H)
 json.dump(m, open(OUT + '/_meta.json', 'w'), indent=1)
-Image.fromarray(full[:PT + 220]).save('/home/claude/art/_ext_top.png')
+Image.fromarray(full[:PT + 220]).save(work('home_ext_top.png'))
 print(full.shape)

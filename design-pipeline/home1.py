@@ -1,8 +1,9 @@
 import numpy as np, cv2, json, time
 from PIL import Image
 from common import *
-OUT = '/home/claude/out/home'; import os; os.makedirs(OUT, exist_ok=True)
-a = fix_edges(np.asarray(Image.open('/home/claude/art/home_crop.png').convert('RGB')).copy())
+from paths import ref, work, asset_dir
+OUT = asset_dir('home')
+a = fix_edges(np.asarray(Image.open(ref('home_crop.png')).convert('RGB')).copy())
 H, W = a.shape[:2]
 els = {
   'coin_pill': dict(kind='rrect', box=(204, 57, 465, 135), r=39, margin=2.5),
@@ -34,8 +35,8 @@ t = time.time()
 base = inpaint(a, clean, 'fsr_best')          # clean status bar / bezel first
 bg = inpaint(base, ui, 'fsr_fast')           # then remove UI
 print('inpaint', round(time.time() - t, 1), 's')
-Image.fromarray(base).save(OUT + '/_base_clean.png')
-Image.fromarray(bg).save(OUT + '/_bg_core.png')
+Image.fromarray(base).save(work('home_base_clean.png'))
+Image.fromarray(bg).save(work('home_bg_core.png'))
 meta = {}
 for k, m in alphas.items():
     rgba, (x0, y0) = cut_sprite(a, m)

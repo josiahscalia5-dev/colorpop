@@ -1,7 +1,8 @@
 import numpy as np, cv2, json
 from PIL import Image
 from common import *
-a = fix_edges(np.asarray(Image.open('/home/claude/art/lvl_crop.png').convert('RGB')).copy())
+from paths import ref, work, data
+a = fix_edges(np.asarray(Image.open(ref('lvl_crop.png')).convert('RGB')).copy())
 H, W = a.shape[:2]
 hsv = cv2.cvtColor(a, cv2.COLOR_RGB2HSV).astype(int)
 hh, ss, vv = hsv[..., 0], hsv[..., 1], hsv[..., 2]
@@ -80,8 +81,8 @@ for k, (hole, box, c) in CHARS.items():
     m[blw] = 0
     masks[k] = m.astype(bool)
     print(k, m.sum())
-np.savez_compressed('/home/claude/out/_lvl_masks.npz', **masks)
-json.dump(dict(HOLES=HOLES, CHARS={k: [v[0], list(v[1]), v[2]] for k, v in CHARS.items()}), open('/home/claude/out/_lvl_geom.json', 'w'), indent=1)
+np.savez_compressed(data('_lvl_masks.npz'), **masks)
+json.dump(dict(HOLES=HOLES, CHARS={k: [v[0], list(v[1]), v[2]] for k, v in CHARS.items()}), open(data('_lvl_geom.json'), 'w'), indent=1)
 # overlay preview
 ov = a.copy().astype(np.float32)
 allm = np.zeros((H, W), bool)
@@ -95,5 +96,5 @@ for hk, g in HOLES.items():
     for key, col in (('inner', (255, 255, 0)), ('outer', (0, 255, 255))):
         cx, cy, ea, eb = g[key]
         d.ellipse([cx - ea, cy - eb, cx + ea, cy + eb], outline=col)
-im.crop((0, 540, 622, 1156)).save('/home/claude/art/_seg_prev.png')
-Image.fromarray(a).crop((0, 540, 622, 1156)).save('/home/claude/art/_seg_orig.png')
+im.crop((0, 540, 622, 1156)).save(work('lvl_seg_prev.png'))
+Image.fromarray(a).crop((0, 540, 622, 1156)).save(work('lvl_seg_orig.png'))
