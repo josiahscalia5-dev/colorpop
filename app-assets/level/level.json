@@ -1,0 +1,194 @@
+{
+ "art": {
+  "w": 622,
+  "h": 1150
+ },
+ "bg": {
+  "file": "level/bg.png",
+  "pad_side": 32,
+  "pad_bottom": 400
+ },
+ "fg_bottom": {
+  "file": "level/fg_bottom.png",
+  "x": 0,
+  "y": 969,
+  "w": 622,
+  "h": 191
+ },
+ "pause": {
+  "file": "level/pause.png",
+  "x": 17,
+  "y": 69,
+  "w": 96,
+  "h": 96,
+  "hit": {
+   "cx": 65.0,
+   "cy": 116.5,
+   "r": 42.0
+  }
+ },
+ "holes": {
+  "h1": {
+   "opening": [
+    241,
+    669.0,
+    86,
+    27.1
+   ]
+  },
+  "h2": {
+   "opening": [
+    489,
+    685.3,
+    90,
+    26.3
+   ]
+  },
+  "h3": {
+   "opening": [
+    112,
+    811.8,
+    98,
+    35.8
+   ]
+  },
+  "h4": {
+   "opening": [
+    499,
+    815.0,
+    99,
+    34.9
+   ]
+  },
+  "h5": {
+   "opening": [
+    321,
+    962.0,
+    126,
+    49.0
+   ]
+  },
+  "h6": {
+   "opening": [
+    502,
+    1072.2,
+    108,
+    46.2
+   ]
+  }
+ },
+ "chars": {
+  "c1": {
+   "file": "level/characters/char_c1.png",
+   "hole": "h1",
+   "color": "green",
+   "x": 174,
+   "y": 564,
+   "w": 129,
+   "h": 167
+  },
+  "c2": {
+   "file": "level/characters/char_c2.png",
+   "hole": "h2",
+   "color": "green",
+   "x": 424,
+   "y": 581,
+   "w": 130,
+   "h": 165
+  },
+  "c3": {
+   "file": "level/characters/char_c3.png",
+   "hole": "h3",
+   "color": "green",
+   "x": 28,
+   "y": 694,
+   "w": 151,
+   "h": 188
+  },
+  "c4": {
+   "file": "level/characters/char_c4.png",
+   "hole": "h4",
+   "color": "red",
+   "x": 420,
+   "y": 716,
+   "w": 153,
+   "h": 168
+  },
+  "c5": {
+   "file": "level/characters/char_c5.png",
+   "hole": "h5",
+   "color": "green",
+   "x": 225,
+   "y": 828,
+   "w": 182,
+   "h": 217
+  },
+  "c6": {
+   "file": "level/characters/char_c6.png",
+   "hole": "h6",
+   "color": "yellow",
+   "x": 419,
+   "y": 953,
+   "w": 160,
+   "h": 200
+  }
+ },
+ "live_text": {
+  "timer": {
+   "box": [
+    498,
+    98,
+    584,
+    127
+   ],
+   "align": "left",
+   "size": 40.3,
+   "scale_x": 0.83,
+   "outline": 3.0,
+   "shadow": 2.0
+  },
+  "target": {
+   "box": [
+    508,
+    210,
+    578,
+    271
+   ],
+   "align": "center",
+   "size": 84.7,
+   "scale_x": 0.93,
+   "outline": 3.6,
+   "shadow": 3.0
+  },
+  "score": {
+   "box": [
+    352,
+    335,
+    375,
+    370
+   ],
+   "align": "left",
+   "size": 48.6,
+   "scale_x": 0.83,
+   "outline": 3.2,
+   "shadow": 2.5
+  }
+ },
+ "text_style": {
+  "fill_top": [
+   255,
+   255,
+   255
+  ],
+  "fill_bottom": [
+   226,
+   228,
+   236
+  ],
+  "outline": [
+   6,
+   12,
+   28
+  ]
+ }
+}
