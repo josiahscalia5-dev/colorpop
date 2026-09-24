@@ -86,9 +86,11 @@ json.dump({'pause': dict(PAUSE, x=px0, y=py0, w=int(rgba.shape[1]), h=int(rgba.s
            'live_text': LIVE_TEXT, 'text_style': STYLE}, open(work('lvl_hud.json'), 'w'), indent=1)
 
 
-def draw_text(img, text, spec, sample=None):
+def draw_text(img, text, spec, style=None):
     """Same drawing as the app: shadow (outline colour, offset down), outline, gradient fill."""
     S = 4  # supersample
+    STYLE_ = style or STYLE
+    H, W = img.shape[:2]
     x0, y0, x1, y1 = spec['box']
     size = spec['size'] * S
     font = ImageFont.truetype(os.path.join(ROOT, 'design-pipeline', 'fonts', 'LilitaOne-Regular.ttf'), int(round(size)))
@@ -116,14 +118,55 @@ def draw_text(img, text, spec, sample=None):
         M = np.float32([[1, 0, tx + ox], [0, 1, ty + oy]])
         aa = cv2.warpAffine(a, M, (W * S, H * S))[..., None]
         return aa, np.array(color, np.float32)
-    for a, col, oy in ((oa, STYLE['outline'], dy), (oa, STYLE['outline'], 0)):
+    for a, col, oy in ((oa, STYLE_['outline'], dy), (oa, STYLE_['outline'], 0)):
         aa, c = comp(a, col, 0, oy); big = big * (1 - aa) + c * aa
     aa, _ = comp(fa, [0, 0, 0], 0, 0)
     t = np.clip((np.arange(H * S)[:, None, None] - (ty + gy0)) / max(gy1 - gy0, 1), 0, 1)
-    grad = np.array(STYLE['fill_top'], np.float32) * (1 - t) + np.array(STYLE['fill_bottom'], np.float32) * t
+    grad = np.array(STYLE_['fill_top'], np.float32) * (1 - t) + np.array(STYLE_['fill_bottom'], np.float32) * t
     big = big * (1 - aa) + grad * aa
     return cv2.resize(big, (W, H), interpolation=cv2.INTER_AREA)
 
+
+# ---------------------------------------------------------------- calibration against the reference
+# The digit boxes fix position, height and width; the lettering weight is tuned here: outline
+# width, shadow offset (and a hair of size/condensing) per number, then the fill gradient, each
+# minimising the difference to the reference in a crop around the number.
+REF_TEXT = {'timer': '00:28', 'target': '12', 'score': '0'}
+
+
+def crop_err(key, spec, style=None):
+    x0, y0, x1, y1 = spec['box']
+    m = 10
+    cy0, cy1, cx0, cx1 = y0 - m, y1 + m + 6, x0 - m, x1 + m
+    sp = dict(spec, box=(x0 - cx0, y0 - cy0, x1 - cx0, y1 - cy0))
+    r = draw_text(out[cy0:cy1, cx0:cx1].astype(np.float32), REF_TEXT[key], sp, style)
+    return float(np.abs(r - orig[cy0:cy1, cx0:cx1]).mean())
+
+
+for key, spec in LIVE_TEXT.items():
+    before = crop_err(key, spec)
+    best = (before, spec)
+    for ol in (1.5, 2.0, 2.5, 3.0, 3.5, 4.0):
+        for sh in (0.0, 1.0, 2.0, 3.0, 4.0):
+            for sz in (1.0, 1.02, 1.04, 1.06, 1.08):
+                for dx in (-0.02, 0.0, 0.02):
+                    cand = dict(spec, outline=ol, shadow=sh, size=round(spec['size'] * sz, 1), scale_x=round(spec['scale_x'] + dx, 3))
+                    e = crop_err(key, cand)
+                    if e < best[0]:
+                        best = (e, cand)
+    LIVE_TEXT[key] = best[1]
+    print('calibrated', key, 'error %.2f -> %.2f' % (before, best[0]),
+          {k: best[1][k] for k in ('size', 'scale_x', 'outline', 'shadow')})
+best_fill = None
+for lo in (220, 228, 236, 244, 252):
+    st = dict(STYLE, fill_bottom=[lo, lo + 2, min(255, lo + 8)])
+    e = sum(crop_err(k, LIVE_TEXT[k], st) for k in LIVE_TEXT)
+    if best_fill is None or e < best_fill[0]:
+        best_fill = (e, st['fill_bottom'])
+STYLE['fill_bottom'] = best_fill[1]
+print('fill bottom', STYLE['fill_bottom'])
+json.dump({'pause': dict(PAUSE, x=px0, y=py0, w=int(rgba.shape[1]), h=int(rgba.shape[0])),
+           'live_text': LIVE_TEXT, 'text_style': STYLE}, open(work('lvl_hud.json'), 'w'), indent=1)
 
 prev = out.astype(np.float32)
 prev = draw_text(prev, '00:28', LIVE_TEXT['timer'])

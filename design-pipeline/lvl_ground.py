@@ -14,7 +14,8 @@ reference from the top; the extra height becomes more ground below the bottom ho
     columns are added on both sides (only seen on screens wider than the reference)
 
 Input:  _work/lvl_bg_hud.npy (lvl_hud.py), _work/lvl_front_edges.json (lvl_holes.py)
-Output: app-assets/level/bg.png, app-assets/level/fg_bottom.png, _work/lvl_ground.json
+Output: app-assets/level/bg.png (PAD_TOP sky rows + art + PB ground rows, PAD_SIDE each side),
+        app-assets/level/fg_bottom.png, _work/lvl_ground.json
 """
 import json
 import numpy as np, cv2
@@ -29,6 +30,7 @@ bg = np.load(work('lvl_bg_hud.npy')).astype(np.float64)
 H0, W = bg.shape[:2]
 PB = 400               # extra rows (enough for ~2.5:1 screens)
 PAD_SIDE = 32
+PAD_TOP = 160         # sky rows above the art (for display cutouts)
 FG_EXT = 10            # rows the foreground continues below the reference, to always reach the screen edge
 HOLES, CHARS, M = load()
 OPEN = json.load(open(work('lvl_front_edges.json')))['opening']
@@ -260,14 +262,20 @@ def poisson_merge(dst, src, mask):
 
 canvas = np.clip(poisson_merge(canvas, S, R), 0, 255)
 
-# ---------------------------------------------------------------- 4. side padding
+# ---------------------------------------------------------------- 4. sky above, side padding
+# PAD_TOP rows of sky above the art, seen only when a camera cutout pushes the HUD down: the top
+# rows of the reference sky are one almost uniform blue, continued upward, a touch deeper.
+top_band = cv2.GaussianBlur(canvas[0:6].mean(0, keepdims=True).astype(np.float32), (0, 0), sigmaX=6, sigmaY=0.1)
+d = (np.arange(PAD_TOP, 0, -1) / PAD_TOP)[:, None, None]
+sky_ext = top_band * (1 - 0.06 * d)
+canvas = np.concatenate([sky_ext, canvas], 0)
 full = cv2.copyMakeBorder(canvas.astype(np.float32), 0, 0, PAD_SIDE, PAD_SIDE, cv2.BORDER_REFLECT_101)
 soft = cv2.GaussianBlur(full, (0, 0), 6)
 ramp = np.clip((np.abs(np.arange(W + 2 * PAD_SIDE) - (W + 2 * PAD_SIDE - 1) / 2) - (W / 2 - 1)) / PAD_SIDE, 0, 1)
 ramp = (ramp ** 0.7)[None, :, None]
 full = np.clip(full * (1 - ramp) + soft * ramp, 0, 255).astype(np.uint8)
 Image.fromarray(full).save(OUT + '/bg.png', optimize=True)
-meta = dict(art_w=W, art_h=VALID_H, pad_side=PAD_SIDE, pad_bottom=PB,
+meta = dict(art_w=W, art_h=VALID_H, pad_side=PAD_SIDE, pad_top=PAD_TOP, pad_bottom=PB,
             fg_bottom=dict(x=0, y=fy0, w=int(fg.shape[1]), h=int(fg.shape[0]), rows_below_art=FG_EXT),
             rebuilt_rims=report)
 json.dump(meta, open(work('lvl_ground.json'), 'w'), indent=1)
@@ -283,7 +291,7 @@ def with_fg(img, shift):
     return o
 
 
-prev = full[:, PAD_SIDE:PAD_SIDE + W].astype(np.float32)
+prev = full[PAD_TOP:, PAD_SIDE:PAD_SIDE + W].astype(np.float32)
 tall_rows = int(round(W * 20 / 9))
 Image.fromarray(np.clip(with_fg(prev, 0)[:1156], 0, 255).astype(np.uint8)).save(work('lvl_view_ref.png'))
 Image.fromarray(np.clip(with_fg(prev, tall_rows - VALID_H)[:tall_rows], 0, 255).astype(np.uint8)).save(work('lvl_view_20x9.png'))

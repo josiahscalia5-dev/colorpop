@@ -102,3 +102,84 @@ def openings(holes, chars, masks, img):
         top, bot = cy - b, front[hk][1] + front[hk][3]
         opening[hk] = [cx, round((top + bot) / 2, 1), a, round((bot - top) / 2, 1)]
     return front, opening
+
+
+def front_edge_columns(hk, holes, chars, masks, img, opening):
+    """The real front edge of the opening, column by column: {x0, y: [...]} in art px.
+
+    The front rim is bumpy (every brick's rounded top rises above the joints), so where the
+    character's body meets the rim the edge is measured per column on the reference -- the
+    body -> brick colour transition -- and lightly smoothed. Columns the body does not reach, or
+    where another character is in front, follow the opening ellipse.
+    """
+    H, W = img.shape[:2]
+    cx, cy, a, b = opening
+    ck = next(k for k, v in chars.items() if v[0] == hk)
+    m = masks[ck]
+    others = np.zeros((H, W), bool)
+    for k in chars:
+        if k != ck:
+            others |= cv2.dilate(masks[k].astype(np.uint8), np.ones((5, 5), np.uint8)).astype(bool)
+    x0, x1 = int(np.ceil(cx - a)), int(np.floor(cx + a))
+    xs = np.arange(x0, x1 + 1)
+    curve = cy + b * np.sqrt(np.clip(1 - ((xs - cx) / a) ** 2, 0, 1))
+    mb = {}
+    for x, cv in zip(xs, curve):
+        col = np.where(m[:, x])[0]
+        if len(col) and abs(col.max() + 0.5 - cv) <= 7:
+            mb[x] = col.max()
+    meas = np.full(len(xs), np.nan)
+    if len(mb) > 10:
+        C = np.median(np.concatenate([img[y - 4:y - 1, x] for x, y in mb.items()]), 0).astype(np.float64)
+        Rs = [img[y + 6:y + 11, x] for x, y in mb.items() if y + 10 < VALID_H and not others[y + 6:y + 11, x].any()]
+        Rm = np.median(np.concatenate(Rs), 0).astype(np.float64)
+        dv = Rm - C
+        for i, x in enumerate(xs):
+            if x not in mb:
+                continue
+            y = mb[x]
+            if y + 10 >= VALID_H or others[y - 3:y + 5, x].any():   # another character right at the edge
+                continue
+            w = np.clip(((img[y - 3:y + 11, x].astype(np.float64) - C) @ dv) / (dv @ dv), 0, 1)
+            w[4 + np.flatnonzero(others[y + 1:y + 11, x])] = 1         # it may start a few px lower
+            idx = np.where(w > 0.5)[0]
+            if len(idx) == 0 or idx[0] == 0:
+                continue
+            j = idx[0]
+            meas[i] = y - 3 + (j - 1) + (0.5 - w[j - 1]) / max(w[j] - w[j - 1], 1e-3) + 0.5
+    # median-3 smoothing of the measured runs, drop wild points
+    sm = meas.copy()
+    for i in range(1, len(xs) - 1):
+        win = meas[i - 1:i + 2]
+        if np.isfinite(win).all():
+            sm[i] = np.median(win)
+    sm[np.abs(sm - curve) > 9] = np.nan
+    # gaps of up to 12 columns: interpolate; blend into the ellipse over 5 px at the ends of each run
+    ok = np.isfinite(sm)
+    edge = curve.copy()
+    wgt = np.zeros(len(xs))
+    if ok.any():
+        idx = np.arange(len(xs))
+        filled = np.interp(idx, idx[ok], sm[ok])
+        dist = np.full(len(xs), 99.0)
+        last = -99
+        for i in range(len(xs)):
+            if ok[i]:
+                last = i
+            dist[i] = i - last
+        nxt = 10 ** 6
+        for i in range(len(xs) - 1, -1, -1):
+            if ok[i]:
+                nxt = i
+            gap = nxt - i
+            # inside a short gap between two measured columns (up to ~12 px -- a brick is 30-40
+            # wide): keep the interpolation
+            if dist[i] + gap <= 13:
+                dist[i] = 0
+            else:
+                dist[i] = min(dist[i], gap)
+        wgt = np.clip(1 - dist / 5.0, 0, 1)
+        edge = curve * (1 - wgt) + filled * wgt
+    # 'w': 1 where the edge is measured, fading to 0 where it follows the ellipse
+    return {'x0': int(x0), 'y': [round(float(v), 2) for v in edge], 'w': [round(float(v), 2) for v in wgt],
+            'measured': int(ok.sum())}

@@ -6,14 +6,15 @@
    reference pose (bounce) without showing a gap -- in-game everything below the front edge is
    hidden by the clip, so the extension is never seen at rest.
 
-The front edge is the fitted one from lvl_geom (the stored inner ellipse is up to 8 px off).
+The front edge is the one measured column by column in lvl_geom (the rim is bumpy; the stored
+inner ellipse is up to 8 px off).
 Output: app-assets/level/characters/char_c1..c6.png + _meta.json, _work/lvl_base.npy
 """
 import numpy as np, cv2, json, time
 from PIL import Image
 from common import fix_edges, status_and_corner_mask, inpaint, save_rgba
 from paths import ref, work, asset_dir
-from lvl_geom import load, openings
+from lvl_geom import load, openings, front_edge_columns
 
 EXT = 34
 OUT = asset_dir('level', 'characters')
@@ -33,6 +34,7 @@ for k, (hole, box, col) in CHARS.items():
     alpha = cv2.GaussianBlur(m, (0, 0), 0.6)
     alpha = np.where(m > 0, np.maximum(alpha, 0.5), alpha * 0.8)
     cx, cy, ea, eb = OPEN[hole]
+    edge = front_edge_columns(hole, HOLES, CHARS, M, base, OPEN[hole])
     ys, xs = np.where(m > 0)
     x0, x1 = xs.min() - 2, xs.max() + 3
     y0, y1 = ys.min() - 2, int(np.ceil(cy + eb)) + EXT
@@ -51,9 +53,14 @@ for k, (hole, box, col) in CHARS.items():
         if len(col_idx) == 0 or abs(xg - cx) > ea:
             continue
         yb = col_idx.max()
-        arc = cy + eb * np.sqrt(max(0.0, 1 - ((xg - cx) / ea) ** 2)) - y0
-        if abs(yb - arc) > 4:
+        ec = xg - edge['x0']
+        if not 0 <= ec < len(edge['y']):
+            continue
+        arc = edge['y'][ec] - y0           # the rim's real (bumpy) top edge in this column
+        smooth = cy + eb * np.sqrt(max(0.0, 1 - ((xg - cx) / ea) ** 2)) - y0
+        if min(abs(yb - arc), abs(yb - smooth)) > 4:
             continue  # this column of the body does not reach the rim (ear, hand, side)
+        # (a brick joint dips below where the reviewed mask stops: the extension fills the V)
         src = rgb[max(0, yb - 4):yb - 1, j].mean(0)
         start = min(yb, int(arc)) - 1
         for yy in range(start, al.shape[0]):

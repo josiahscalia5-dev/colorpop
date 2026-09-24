@@ -27,7 +27,7 @@ import scipy.sparse.linalg as spla
 from PIL import Image
 from paths import work
 
-from lvl_geom import VALID_H, load, openings
+from lvl_geom import VALID_H, load, openings, front_edge_columns
 import lvl_geom
 
 base = np.load(work('lvl_base.npy')).astype(np.float64)
@@ -52,6 +52,8 @@ def ring_point(hole, rho, th):
 
 # The opening used from here on (interior, ring inner edge, in-game clip): one ellipse from the
 # stored back edge of the opening to the fitted front edge, so both arcs meet at the sides.
+import copy
+HOLES_STORED = copy.deepcopy(HOLES)
 FRONT, OPEN = openings(HOLES, CHARS, M, base)
 for h in HOLES:
     HOLES[h]['inner_stored'] = HOLES[h]['inner']
@@ -545,9 +547,76 @@ for i in range(1, n_lab):
     hp = reg - cv2.GaussianBlur(reg.astype(np.float32), (0, 0), 2.0).astype(np.float64)
     out[ly0:ly1, lx0:lx1] = poisson_merge(reg, hp, comp[ly0:ly1, lx0:lx1])
 report['leak_px'] = int(leak.sum())
+
+# The front rim is bumpy: the brick tops rise above the smooth opening ellipse the rebuild above
+# used. Where a character's body met the rim, put the reference's own rim pixels back below the
+# measured edge (they are exactly what the player sees under a character), so that an empty
+# hole's rim and the in-game clip line are the same line.
+_hb = cv2.cvtColor(np.clip(base, 0, 255).astype(np.uint8), cv2.COLOR_RGB2HSV).astype(int)
+CHAR_COLOUR = (((_hb[..., 0] >= 35) & (_hb[..., 0] <= 95) & (_hb[..., 1] > 60) & (_hb[..., 2] > 30))      # green, lit or shaded
+               | (((_hb[..., 0] <= 5) | (_hb[..., 0] >= 160)) & (_hb[..., 1] > 120) & (_hb[..., 2] > 90))  # red
+               | ((_hb[..., 0] >= 22) & (_hb[..., 0] <= 36) & (_hb[..., 1] > 80) & (_hb[..., 2] > 170)))   # yellow
+EDGES = {}
+for h in HOLES:
+    e = front_edge_columns(h, HOLES_STORED, CHARS, M, base, HOLES[h]['inner'])
+    EDGES[h] = e
+    ck = char_of[h]
+    near_other = np.zeros((H, W), bool)
+    for k in CHARS:
+        if k != ck:
+            near_other |= cv2.dilate(M[k].astype(np.uint8), np.ones((9, 9), np.uint8)).astype(bool)
+    restored = 0
+    done_cols, gap_cols = [], []
+    for i, (yb, wv) in enumerate(zip(e['y'], e['w'])):
+        x = e['x0'] + i
+        if wv < 1 or not 0 <= x < W:
+            continue
+        y_in = int(np.ceil(yb))
+        y_end = min(VALID_H - 1, int(front_curve(h, np.array([float(x)]))[0]) + 8)
+        hit = np.flatnonzero(near_other[y_in:y_end + 1, x])
+        if len(hit):
+            y_end = y_in + hit[0] - 1          # stop where another character (in front) begins
+        if y_in + 2 > y_end:
+            gap_cols.append((x, yb))
+            continue
+        cover = y_in - yb                                   # rim share of the straddling pixel
+        out[y_in, x] = base[y_in + 1, x]                    # first full row: can hold body colour, skip it
+        out[y_in + 1:y_end + 1, x] = base[y_in + 1:y_end + 1, x]
+        if y_in - 1 >= 0:
+            out[y_in - 1, x] = out[y_in - 1, x] * (1 - cover) + base[y_in + 1, x] * cover
+        # the V of a brick joint dips below the smoothed edge: body colour left there -> brick below
+        for y in range(max(0, y_in - 1), min(VALID_H - 1, y_in + 6)):
+            if CHAR_COLOUR[y, x]:
+                y2 = y + 1
+                while y2 < min(VALID_H - 1, y + 10) and CHAR_COLOUR[y2, x]:
+                    y2 += 1
+                out[y, x] = base[y2, x]
+        restored += 1
+        done_cols.append((x, yb))
+    # columns right above another character: carry the brick-top rows across from the nearest
+    # restored columns on both sides (only over what is still dark interior)
+    for x, yb in gap_cols:
+        left = [c for c in done_cols if c[0] < x]
+        right = [c for c in done_cols if c[0] > x]
+        if not left or not right:
+            continue
+        (xl, yl), (xr, yr) = left[-1], right[0]
+        if xr - xl > 40:
+            continue
+        u = (x - xl) / (xr - xl)
+        y_in = int(np.ceil(yb))
+        for dy in range(0, 9):
+            y = y_in + dy
+            if y >= VALID_H or near_other[y, x]:
+                break
+            src = out[int(np.ceil(yl)) + dy, xl] * (1 - u) + out[int(np.ceil(yr)) + dy, xr] * u
+            if out[y, x].sum() < 240:          # interior, not rim
+                out[y, x] = src
+    report[h]['rim_top_columns_restored'] = restored
+    report[h]['rim_top_columns_bridged'] = len(gap_cols)
 out = np.clip(out, 0, 255)
 np.save(work('lvl_bg_holes.npy'), out.astype(np.uint8))
-json.dump({'opening': {h: HOLES[h]['inner'] for h in HOLES}, 'front_fit': FRONT, 'report': report}, open(work('lvl_front_edges.json'), 'w'), indent=1)
+json.dump({'opening': {h: HOLES[h]['inner'] for h in HOLES}, 'front_fit': FRONT, 'edge': EDGES, 'report': report}, open(work('lvl_front_edges.json'), 'w'), indent=1)
 Image.fromarray(out.astype(np.uint8)).save(work('lvl_bg_holes.png'))
 print(json.dumps(report))
 print('openings', {h: HOLES[h]['inner'] for h in HOLES})

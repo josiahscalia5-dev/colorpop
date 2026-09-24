@@ -1,0 +1,69 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.colorpop.game'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'com.colorpop.game'
+        minSdk 21
+        targetSdk 35
+        versionCode 1
+        versionName '0.1'
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+
+    // The art lives in ../app-assets (written by design-pipeline/); only what the game uses is packaged.
+    sourceSets {
+        main {
+            assets.srcDirs += [layout.buildDirectory.dir('generated/art-assets').get().asFile]
+        }
+    }
+
+    // SoundPool reads the effects straight out of the APK, so they must stay uncompressed
+    androidResources {
+        noCompress 'wav'
+    }
+
+    testOptions {
+        unitTests {
+            includeAndroidResources = true
+            all {
+                maxHeapSize = '3g'
+            }
+        }
+    }
+}
+
+def syncArtAssets = tasks.register('syncArtAssets', Sync) {
+    from('../app-assets') {
+        include 'home/*.png', 'home/_meta.json'
+        include 'level/*.png', 'level/level.json', 'level/characters/*.png'
+        include 'sfx/*.wav'
+    }
+    from('../design-pipeline/fonts') {
+        include 'LilitaOne-Regular.ttf'
+        into 'fonts'
+    }
+    into layout.buildDirectory.dir('generated/art-assets')
+}
+tasks.named('preBuild') { dependsOn syncArtAssets }
+
+dependencies {
+    // Tests only (the app itself has no dependencies): the real screens rendered on the JVM on
+    // many phone shapes, see ScreenRenderTest. Robolectric runs SDK 35 on JDK 21 (Android Studio's).
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.robolectric:robolectric:4.17'
+}
