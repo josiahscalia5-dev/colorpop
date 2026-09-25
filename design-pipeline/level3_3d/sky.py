@@ -20,9 +20,16 @@ def sky(w, h, seed=8):
     yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
     haze = np.exp(-(((xx - 0.05 * w) / (0.55 * w)) ** 2 + ((yy - 0.30 * h) / (0.12 * h)) ** 2))
     img = img * (1 - 0.65 * haze[..., None]) + 0.65 * haze[..., None] * np.array([255, 214, 130.0])
+    # distant hills along the horizon, hazy blue-green (the 3D tree line stands in front of them)
+    for k, (amp, base, col, ph) in enumerate(((0.030, 0.262, (118, 170, 140), 0.4), (0.022, 0.272, (96, 150, 104), 2.1))):
+        xs = np.arange(w) / w
+        top = (base - amp * (0.6 * np.sin(xs * 5.3 + ph) + 0.4 * np.sin(xs * 11.7 + 2 * ph))) * h
+        m = (yy >= top[None, :]).astype(np.float32)
+        m = cv2.GaussianBlur(m, (0, 0), 1.5 * s)
+        img = img * (1 - m[..., None]) + m[..., None] * np.array(col, np.float32)
     # soft cumulus clouds: clusters of round puffs, white on top, a little blue-grey underneath
     for i in range(9):
-        cx, cy = rnd.uniform(-0.05, 1.05) * w, rnd.uniform(0.03, 0.27) * h
+        cx, cy = rnd.uniform(-0.05, 1.05) * w, rnd.uniform(0.03, 0.2) * h
         lay = np.zeros((h, w), np.float32)
         n = rnd.integers(5, 9)
         for j in range(n):

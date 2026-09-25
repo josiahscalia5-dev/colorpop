@@ -329,7 +329,7 @@ def beam(name, a, b, w, material, h=None):
 
 def fence(sc, rnd):
     wood = noise_ramp_material('fencewood', (0.24, 0.10, 0.035), (0.42, 0.20, 0.08), 1.5, 9.0, 0.35, rough=0.7)
-    pale = noise_ramp_material('fencepale', (0.50, 0.44, 0.52), (0.72, 0.66, 0.74), 1.5, 9.0, 0.3, rough=0.7)
+    pale = noise_ramp_material('fencepale', (0.30, 0.26, 0.33), (0.46, 0.41, 0.50), 1.5, 9.0, 0.3, rough=0.7)
     y = YARD_END + 0.3
     xs = [-19 + 2.9 * i + rnd.uniform(-0.12, 0.12) for i in range(15)]
     for x in xs:
@@ -344,14 +344,15 @@ def backdrop(sc, rnd):
     """Meadow behind the fence, rolling hills, sunlit trees, a red barn on the right."""
     y0 = YARD_END + 0.4
     meadow = grass_material()
-    bpy.ops.mesh.primitive_grid_add(x_subdivisions=120, y_subdivisions=60, size=1, location=(0, 0, 0))
+    DEPTH = 17.0                                # the meadow ends behind the far tree line: sky above it
+    bpy.ops.mesh.primitive_grid_add(x_subdivisions=120, y_subdivisions=30, size=1, location=(0, 0, 0))
     m = obj_from('meadow', meadow)
-    m.scale = (160, 120, 1)
-    m.location = (0, y0 + 60, 0)
+    m.scale = (90, DEPTH, 1)
+    m.location = (0, y0 + DEPTH / 2, 0)
     bpy.ops.object.transform_apply(location=True, scale=True)
     for v in m.data.vertices:
         d = v.co.y - y0
-        v.co.z = (1.2 * math.sin(v.co.x * 0.08 + 1.0) + 0.8 * math.sin(v.co.x * 0.19) + 0.6) * min(1.0, max(0.0, (d - 12) / 30))
+        v.co.z = 0.06 * d
     for v in m.data.vertices:
         if v.co.y < y0 + 0.2:
             v.co.z = -0.02
@@ -362,7 +363,7 @@ def backdrop(sc, rnd):
                                             ((0.03, 0.14, 0.03), (0.18, 0.42, 0.06))))]
     def ground_z(x, y):
         d = y - y0
-        return (1.2 * math.sin(x * 0.08 + 1.0) + 0.8 * math.sin(x * 0.19) + 0.6) * min(1.0, max(0.0, (d - 12) / 30))
+        return 0.06 * d
     # a hedge of round bushes right behind the fence
     bush = [noise_ramp_material('bush%d' % i, c0, c1, 1.5, 8.0, 0.6, rough=0.8)
             for i, (c0, c1) in enumerate((((0.03, 0.16, 0.02), (0.22, 0.48, 0.04)), ((0.06, 0.2, 0.02), (0.42, 0.52, 0.05))))]
@@ -372,9 +373,9 @@ def backdrop(sc, rnd):
         s_ = rnd.uniform(0.9, 1.6)
         instance('bush', shared_mesh('crown', rnd.randrange(5)), (x, yy, s_ * 0.55), (s_ * 1.3, s_, s_ * 0.9), (0, 0, rnd.uniform(0, 6.28)),
                  bush[rnd.randrange(2)])
-    for band, (ya, yb, n, smin, smax) in enumerate(((y0 + 4, y0 + 10, 24, 1.1, 1.8), (y0 + 13, y0 + 32, 26, 1.5, 2.5))):
+    for band, (ya, yb, n, smin, smax) in enumerate(((y0 + 4, y0 + 10, 20, 1.1, 1.8), (y0 + 12, y0 + 16.5, 46, 1.5, 2.4))):
         for i in range(n):
-            x = rnd.uniform(-22 - band * 12, 22 + band * 12)
+            x = rnd.uniform(-24 - band * 6, 24 + band * 6)
             yy = rnd.uniform(ya, yb)
             if 9 < x < 21:
                 continue                        # the barn stands there
@@ -442,7 +443,7 @@ def build(sc, seed=5):
 
 # the reference moment: two purples (targets), the pink and the red decoys, three empty holes
 CAST = {'H1': 'pink', 'H2': 'purple', 'H3': 'red', 'H4': 'purple', 'H5': None, 'H6': None, 'H7': None}
-CHAR_SCALE, CHAR_SINK, CHAR_TILT = 1.2, -0.52, -21.0
+CHAR_SCALE, CHAR_SINK, CHAR_TILT = 1.0, -0.62, -21.0
 
 
 def characters(sc, holes_world, cast=CAST):

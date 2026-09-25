@@ -124,8 +124,8 @@ def build(variant, location=(0, 0, 0), scale=1.0, tag='', ears=False, paw=False,
     for s in (-1, 1):
         sphere('eyew_' + t, (0.33 * s, -0.66, 1.03), (0.28, 0.13, 0.30), white, root)
         sphere('pupil_' + t, (0.325 * s, -0.775, 1.01), (0.18, 0.065, 0.21), black, root)
-        sphere('shine1_' + t, (0.27 * s, -0.84, 1.09), (0.058, 0.02, 0.064), shine, root)
-        sphere('shine2_' + t, (0.37 * s, -0.84, 0.94), (0.025, 0.012, 0.028), shine, root)
+        sphere('shine1_' + t, (0.27 * s, -0.865, 1.08), (0.058, 0.03, 0.062), shine, root)     # clean round glints,
+        sphere('shine2_' + t, (0.37 * s, -0.86, 0.95), (0.026, 0.02, 0.028), shine, root)      # in front of the pupil
     # nose and a small smile
     sphere('nose_' + t, (0, -0.80, 0.84), (0.085, 0.055, 0.06), nose, root)
     sphere('noseshine_' + t, (-0.02, -0.85, 0.86), (0.022, 0.01, 0.014), shine, root)
@@ -151,7 +151,7 @@ def build(variant, location=(0, 0, 0), scale=1.0, tag='', ears=False, paw=False,
         for k in (-1, 0, 1):
             sphere('toe_' + t, (-0.86 + 0.07 * k, -0.64, 0.88 + 0.02 * abs(k)), (0.05, 0.035, 0.05), muzzle, root)
     # knit cap: dome, turned-up band, and the curl (purple) or knob on top
-    sphere('cap_' + t, (0, 0.02, 1.34), (0.89, 0.79, 0.68), cap, root, segs=64)     # a round beanie
+    sphere('cap_' + t, (0, 0.02, 1.34), (0.89, 0.79, 0.64), cap, root, segs=64)     # a round beanie
     bpy.ops.mesh.primitive_torus_add(major_radius=0.85, minor_radius=0.09, major_segments=96, minor_segments=24, location=(0, -0.01, 1.30))
     b = bpy.context.object
     b.name = 'band_' + t
@@ -164,7 +164,7 @@ def build(variant, location=(0, 0, 0), scale=1.0, tag='', ears=False, paw=False,
         # a soft lilac curl: a tapered tube rising from the crown and curling over to one side
         cd = bpy.data.curves.new('curl_' + t, 'CURVE'); cd.dimensions = '3D'
         sp = cd.splines.new('BEZIER'); sp.bezier_points.add(2)
-        pts = [(0.0, 0.05, 2.02), (0.04, 0.05, 2.28), (-0.20, 0.05, 2.40)]
+        pts = [(0.0, 0.05, 1.96), (0.04, 0.05, 2.22), (-0.20, 0.05, 2.34)]
         for bp, co in zip(sp.bezier_points, pts):
             bp.co = co
             bp.handle_left_type = bp.handle_right_type = 'AUTO'
@@ -182,8 +182,8 @@ def build(variant, location=(0, 0, 0), scale=1.0, tag='', ears=False, paw=False,
         bpy.context.scene.collection.objects.link(co)
         co.data.materials.append(top)
         co.parent = root
-        sphere('curltip_' + t, (-0.22, 0.05, 2.395), (0.045, 0.045, 0.045), top, root)
+        sphere('curltip_' + t, (-0.22, 0.05, 2.335), (0.045, 0.045, 0.045), top, root)
     else:
-        sphere('knobstem_' + t, (0, 0.03, 2.06), (0.1, 0.1, 0.12), top, root)
-        sphere('knob_' + t, (0, 0.03, 2.17), (0.15, 0.15, 0.13), top, root)
+        sphere('knobstem_' + t, (0, 0.03, 2.0), (0.1, 0.1, 0.12), top, root)
+        sphere('knob_' + t, (0, 0.03, 2.11), (0.15, 0.15, 0.13), top, root)
     return root
