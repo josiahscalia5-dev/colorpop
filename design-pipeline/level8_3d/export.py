@@ -25,6 +25,7 @@ from compose import Hud, ART_W, ART_H
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 OUT = os.path.join(ROOT, 'app-assets', 'level8')
 K = 2                                     # image px per art px
+E = 140                                   # art px beyond each side of the screen (characters at the edges)
 # gold miners' glow centres (art px: x, y, radius) -- as in the approved mockup
 HOLE_ART = {'H1': (214, 700), 'H2': (510, 700), 'H3': (66, 852), 'H4': (362, 842), 'H5': (658, 852),
             'H6': (206, 1012), 'H7': (518, 1012), 'H8': (362, 1200)}
@@ -38,11 +39,12 @@ def gold_light():
     rnd = np.random.default_rng(5)
     out = {}
     for kk, (cx, cy, r) in GOLD.items():
-        halo = np.zeros((ART_H * K, ART_W * K), np.float32)
+        halo = np.zeros((ART_H * K, (ART_W + 2 * E) * K), np.float32)
+        cx = cx + E
         cv2.circle(halo, (int(cx * K), int(cy * K)), int(r * 0.95 * K), 1.0, -1, cv2.LINE_AA)
         halo = cv2.GaussianBlur(halo, (0, 0), 26 * K / 2)
         light = halo[..., None] * np.array([255, 170, 40.0]) * 0.17
-        sp = Image.new('RGBA', (ART_W * K, ART_H * K), (0, 0, 0, 0))
+        sp = Image.new('RGBA', ((ART_W + 2 * E) * K, ART_H * K), (0, 0, 0, 0))
         for i in range(5):
             ang = rnd.uniform(0, 2 * np.pi); d = r * rnd.uniform(0.8, 1.25)
             sparkle(sp, (cx + d * np.cos(ang)) * K, (cy - abs(d * np.sin(ang)) * 0.9) * K, rnd.uniform(8, 16) * K, rnd.uniform(0.7, 1.0))
@@ -92,6 +94,38 @@ def front_edges(rim_path, geo):
     return edges
 
 
+def hides_mask(hole, W, H):
+    """Where the front rim hides a character in this hole (as LevelScreen.Hole.hides), image px."""
+    cx, cy, a, b = hole['opening']
+    ys = np.array(hole['edge']['y']); x0 = hole['edge']['x0']
+    Y, X = np.mgrid[0:H, 0:W] / K + 0.5 / K
+    xi = np.clip(np.floor(X - 0.5 - x0).astype(int), 0, len(ys) - 1)
+    return (Y >= cy) & ((X < cx - a) | (X > cx + a) | (Y >= ys[xi]))
+
+
+def cast_light(full_render, bg_render, level, sprites):
+    """What the gold miners add around them in the approved mockup: their halo and sparkles, their
+    headlamp bloom and the light they throw on their rims and holes = max(mockup - background with
+    the characters, 0). Returns the full-frame RGB light (to share out per miner)."""
+    img, _ = compose.scene_image(full_render)
+    img, sp = compose.gold_glow(img, list(GOLD.values()), K)
+    m = Image.fromarray(np.clip(img, 0, 255).astype(np.uint8)).convert('RGBA')
+    m.alpha_composite(sp.filter(ImageFilter.GaussianBlur(3 * K))); m.alpha_composite(sp)
+    mock = np.asarray(m.convert('RGB')).astype(np.float32)
+    parts, _ = compose.scene_image(bg_render)
+    H, W = parts.shape[:2]
+    for hk in sorted(level['holes'], key=lambda k: level['holes'][k]['opening'][1]):
+        if hk not in sprites:
+            continue
+        rgba, x2, y2 = sprites[hk]
+        vis = ~hides_mask(level['holes'][hk], W, H)
+        xa, ya, xb, yb = max(0, x2), max(0, y2), min(W, x2 + rgba.shape[1]), min(H, y2 + rgba.shape[0])
+        sub = rgba[ya - y2:yb - y2, xa - x2:xb - x2]
+        al = sub[..., 3:] / 255 * vis[ya:yb, xa:xb, None]
+        parts[ya:yb, xa:xb] = parts[ya:yb, xa:xb] * (1 - al) + sub[..., :3] * al
+    return cv2.GaussianBlur(np.clip(mock - parts, 0, 255), (0, 0), 0.8)
+
+
 def trim(rgba, ox, oy):
     """Crop to the opaque part (even px offsets, so art px stay whole or half)."""
     a = rgba[..., 3]
@@ -102,7 +136,7 @@ def trim(rgba, ox, oy):
     return rgba[y0:y1, x0:x1], ox + x0, oy + y0
 
 
-def main(render_dir, portrait):
+def main(render_dir, portrait, full_render):
     os.makedirs(OUT, exist_ok=True)
     geo = json.load(open(os.path.join(render_dir, 'geometry.json')))
     rules = json.load(open(RULES_FROM))['rules']
@@ -128,30 +162,43 @@ def main(render_dir, portrait):
 
     # ------------------------------------------------ characters and the gold miners' light
     level['chars'] = {}
-    lights = gold_light()
+    synth = gold_light()
+    # all sprites first (the light they add is measured with all of them in place)
+    sprites = {}
+    for fn in sorted(os.listdir(render_dir)):
+        if fn.startswith('char_') and fn.endswith('.json'):
+            meta = json.load(open(os.path.join(render_dir, fn)))
+            rgba = np.asarray(Image.open(os.path.join(render_dir, fn[:-5] + '.png')).convert('RGBA')).astype(np.float32)
+            sprites[meta['hole']] = trim(rgba, meta['x0'], meta['y0'])
+    light = cast_light(full_render, os.path.join(render_dir, 'bg_render.png'), level, sprites)
+    # share it out: each light pixel goes to the nearest gold miner
+    gold_keys = [kk for kk in GOLD]
+    Yg, Xg = np.mgrid[0:ART_H * K, 0:ART_W * K]
+    dist = np.stack([np.hypot(Xg - GOLD[kk][0] * K, (Yg - GOLD[kk][1] * K) * 1.4) for kk in gold_keys])
+    nearest = np.argmin(dist, 0)
+    near_any = np.min(dist, 0) < 170 * K
     for fn in sorted(os.listdir(render_dir)):
         if not (fn.startswith('char_') and fn.endswith('.json')):
             continue
         meta = json.load(open(os.path.join(render_dir, fn)))
         kk, variant = meta['hole'], meta['variant']
-        rgba = np.asarray(Image.open(os.path.join(render_dir, fn[:-5] + '.png')).convert('RGBA')).astype(np.float32)
-        rgba, x2, y2 = trim(rgba, meta['x0'], meta['y0'])
+        rgba, x2, y2 = sprites[kk]
         name = 'char_%s_%s' % (variant, kk)
         save_rgba(os.path.join(OUT, name + '.png'), rgba)
         e = {'file': 'level8/%s.png' % name, 'x': x2 / K, 'y': y2 / K, 'w': rgba.shape[1] / K, 'h': rgba.shape[0] / K,
              'scale': K, 'hole': kk, 'color': variant, 'role': 'target' if variant == 'gold' else 'distractor'}
         if variant == 'gold':
             # its share of the light: halo + sparkles around it, and the bloom of its own headlamp
-            gx0, gy0 = max(0, x2 - 60 * K), max(0, y2 - 60 * K)
-            gx1, gy1 = min(ART_W * K, x2 + rgba.shape[1] + 60 * K), min(ART_H * K, y2 + int(rgba.shape[0] * 0.75))
-            g = lights[kk][gy0:gy1, gx0:gx1].copy()
-            spr = np.zeros((gy1 - gy0, gx1 - gx0, 3), np.float32)
-            a = rgba[..., 3:] / 255
-            spr[y2 - gy0:y2 - gy0 + rgba.shape[0], x2 - gx0:x2 - gx0 + rgba.shape[1]] = (rgba[..., :3] * a)[:gy1 - y2, :gx1 - x2]
-            lum = spr.mean(-1) / 255
-            b = np.clip((lum - 0.88) / 0.12, 0, 1)[..., None] * spr
-            bloom = cv2.GaussianBlur(b, (0, 0), 6 * K) * 0.55 + cv2.GaussianBlur(b, (0, 0), 22 * K) * 0.45
-            g = np.clip(g + bloom * 0.9, 0, 255)
+            gx0, gy0 = max(-E * K, x2 - 60 * K), max(0, y2 - 60 * K)
+            gx1, gy1 = min((ART_W + E) * K, x2 + rgba.shape[1] + 60 * K), min(ART_H * K, y2 + int(rgba.shape[0] * 0.75))
+            mine = ((nearest == gold_keys.index(kk)) & near_any)[..., None] * light
+            g = np.zeros((gy1 - gy0, gx1 - gx0, 3), np.float32)
+            # inside the screen: the measured light; beyond its edge (a miner cut by it): the halo and
+            # sparkles as drawn for the mockup
+            g[:] = synth[kk][gy0:gy1, gx0 + E * K:gx1 + E * K]
+            ia, ib = max(gx0, 0), min(gx1, ART_W * K)
+            g[:, ia - gx0:ib - gx0] = mine[gy0:gy1, ia:ib]
+            g = np.clip(g, 0, 255)
             gname = 'glow_' + kk
             Image.fromarray(g.astype(np.uint8)).save(os.path.join(OUT, gname + '.png'), optimize=True)
             e['glow'] = {'file': 'level8/%s.png' % gname, 'x': gx0 / K, 'y': gy0 / K, 'w': (gx1 - gx0) / K, 'h': (gy1 - gy0) / K, 'scale': K}
@@ -181,4 +228,4 @@ def main(render_dir, portrait):
 
 
 if __name__ == '__main__':
-    main(sys.argv[1], sys.argv[2])
+    main(sys.argv[1], sys.argv[2], sys.argv[3])

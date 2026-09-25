@@ -1,6 +1,6 @@
 # Color Pop — Android game (work in progress)
 
-**Status: playable test build 0.5 (before Level 10; the owner is testing it on their phone).** Home and Levels 1, 3, 6 and 8 are implemented as an Android app
+**Status: playable test build 0.6 (before Level 10): Level 8 in its new, owner-approved design.** Home and Levels 1, 3, 6 and 8 are implemented as an Android app
 (Java, no dependencies) and verified by rendering the real screens on 14 phone configurations and
 comparing them with the reference. Do not start over — continue from here.
 
@@ -9,7 +9,7 @@ Screens:
 2. Level 1 ("HIT THE GREEN ONES!") — done
 3. Level 3 ("HIT THE PURPLE ONES!", combo, swipe hint) — done
 4. Level 6 ("HIT THE STARS!", combo, bombs) — done
-5. Level 8 ("HIT THE GOLD ONES!", look-alike decoys, SPEED INCREASED!) — done
+5. Level 8 ("HIT THE GOLD ONES!", look-alike decoys, SPEED INCREASED!) — done, new design (see below)
 6. Level 10, Level Complete, Worlds — to do (second reference sheet)
 
 The levels are played in the order 1 → 3 → 6 → 8 (→ 10); winning one unlocks the next (saved) and the
@@ -160,12 +160,33 @@ blur is first inverted (Richardson-Lucy, ~1 art px for characters in focus, 2-2.
 mockup paints out of focus, per character in the level scripts), then Real-ESRGAN (x4plus, CPU via
 `pip install ncnn`; models in `design-pipeline/_models/`, not committed, from the Real-ESRGAN ncnn
 release) upscales them, keeping the enlargement's own shapes, colours and lighting.
+(Superseded for Level 8 by its new design, below; still used for Levels 3 and 6.)
 **Approved by the owner (build 0.5): keep this reconstruction as it is.** The four characters the Level 8
 mockup paints out of focus (yellow and brown-hat decoys, the two far gold miners) stay as reconstructed:
 they must not be redrawn, recoloured or given invented detail; the owner prefers the original artwork.
 No further character-art changes without the owner's request. Each character's alpha is tight around it, so no background is
 carried along when it pops up in another hole, and a far-away character is not blown up in a front
 hole (at most 1.3x, `LevelScreen.pick`).
+
+### Level 8: new high-resolution design (approved by the owner, build 0.6)
+The sheet's Level 8 was too small to become as crisp as Level 1, so the owner approved a new design of
+its own: a gold mine at night (starry sky, mine entrance with a cart of gold, head-frame tower, lantern
+lights), eight holes with rounded stone rims, gold miners (targets: polished gold, lamp lit, glowing)
+and two look-alike decoys (lemon-yellow and brown, lamps off). It is modelled and rendered in 3D with
+Blender (Cycles) at twice the art resolution, the HUD redrawn in the Color Pop style. Gameplay and
+rules are unchanged. The approved mockup is `reference/level8_new/mockup.png` (and
+`reference/screens/level8_new.png`, which the render comparison uses).
+- `design-pipeline/level8_3d/`: `scene.py` (scene, camera, lights), `miner.py` (characters), `sky.py`,
+  `compose.py` (HUD, mockup), `portrait.py`, `render_assets.py` (renders: background without
+  characters, each character alone, rim ids for the front edges, hole geometry), `export.py` (writes
+  `app-assets/level8/`: 2x background with the fixed HUD, character sprites, the gold miners' light
+  layers measured from the mockup render, pause, banner, `level.json`).
+- Blender: `python3 -m venv V && V/bin/pip install bpy==4.4.0 "numpy<2"`; then
+  `V/bin/python render_assets.py -- OUT 128` (about 25 min on 4 CPU cores) and
+  `python3 export.py OUT portrait.png full_render.png`.
+- The app draws a level's background, sprites, pause button and glow layers from 2x art when
+  level.json says `"scale": 2`.
+- `levels/level8.py` (the sheet version) is kept for reference only and writes elsewhere.
 
 ## Remaining work
 1. Level 10, Level Complete and Worlds screens (second sheet), coins.

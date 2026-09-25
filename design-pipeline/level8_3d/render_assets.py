@@ -45,44 +45,51 @@ for k, p in hw.items():
                           round((max(xs) - min(xs)) / 2, 2), round((max(ys) - min(ys)) / 2, 2)],
               'world': [p.x, p.y]}
 json.dump(geo, open(os.path.join(OUT, 'geometry.json'), 'w'), indent=1)
-if '--skip-bg' not in sys.argv:
+if '--skip-bg' not in sys.argv and '--chars-only' not in sys.argv:
     sc.render.filepath = os.path.join(OUT, 'bg_render.png')
     bpy.ops.render.render(write_still=True)
 
 # ---------------------------------------------------------------- rim stones in id colours
-sc, hw = setup()
-sc.cycles.samples = 1
-sc.cycles.use_denoising = False
-sc.cycles.pixel_filter_type = 'BOX'
-sc.cycles.filter_width = 0.01
-sc.view_settings.view_transform = 'Standard'
-sc.view_settings.look = 'None'
-sc.view_settings.exposure = 0
-keys = list(hw)
-for o in sc.objects:
-    if o.type not in ('MESH', 'CURVE'):
-        continue
-    hole_key = o.parent.name[5:] if o.parent and o.parent.name.startswith('hole_') else None
-    if hole_key and o.name.startswith('stone_'):
-        i = keys.index(hole_key) + 1
-        m = bpy.data.materials.new('id%d' % i)
-        m.use_nodes = True
-        nt = m.node_tree
-        for n in list(nt.nodes):
-            nt.nodes.remove(n)
-        em = nt.nodes.new('ShaderNodeEmission')
-        em.inputs['Color'].default_value = (i / 10.0, 0, 0, 1)
-        outn = nt.nodes.new('ShaderNodeOutputMaterial')
-        nt.links.new(em.outputs[0], outn.inputs[0])
-        o.material_slots[0].material = m
-    else:
-        o.hide_render = True
-sc.render.image_settings.color_depth = '16'
-sc.render.filepath = os.path.join(OUT, 'rim_ids.png')
-bpy.ops.render.render(write_still=True)
+def rim_ids():
+    sc, hw = setup()
+    sc.cycles.samples = 1
+    sc.cycles.use_denoising = False
+    sc.cycles.pixel_filter_type = 'BOX'
+    sc.cycles.filter_width = 0.01
+    sc.view_settings.view_transform = 'Standard'
+    sc.view_settings.look = 'None'
+    sc.view_settings.exposure = 0
+    keys = list(hw)
+    for o in sc.objects:
+        if o.type not in ('MESH', 'CURVE'):
+            continue
+        hole_key = o.parent.name[5:] if o.parent and o.parent.name.startswith('hole_') else None
+        if hole_key and o.name.startswith('stone_'):
+            i = keys.index(hole_key) + 1
+            m = bpy.data.materials.new('id%d' % i)
+            m.use_nodes = True
+            nt = m.node_tree
+            for n in list(nt.nodes):
+                nt.nodes.remove(n)
+            em = nt.nodes.new('ShaderNodeEmission')
+            em.inputs['Color'].default_value = (i / 10.0, 0, 0, 1)
+            outn = nt.nodes.new('ShaderNodeOutputMaterial')
+            nt.links.new(em.outputs[0], outn.inputs[0])
+            o.material_slots[0].material = m
+        else:
+            o.hide_render = True
+    sc.render.image_settings.color_depth = '16'
+    sc.render.filepath = os.path.join(OUT, 'rim_ids.png')
+    bpy.ops.render.render(write_still=True)
+
+
+if '--chars-only' not in sys.argv:
+    rim_ids()
 
 # ---------------------------------------------------------------- the characters, one at a time
 sc, hw = setup()
+E = 140                                   # art px added on each side: characters at the screen edges come out whole
+sc.render.resolution_x = (ART_W + 2 * E) * 2   # vertical sensor fit: same scale and projection, wider view
 roots = scene.characters(sc, hw)
 chars = {k: [o for o in sc.objects if o == r or o.parent == r] for k, r in roots.items()}
 everything = [o for o in sc.objects if o.type in ('MESH', 'CURVE')]
@@ -96,11 +103,11 @@ for k in roots:
     cx, cy, a, b = geo[k]['opening']
     x0, x1 = cx - 1.35 * a, cx + 1.35 * a
     y0, y1 = cy - 3.4 * b - 1.2 * a, cy + b + 70
-    x0, y0 = max(0, int(x0) // 2 * 2), max(0, int(y0) // 2 * 2)
-    x1, y1 = min(ART_W, int(x1 + 2) // 2 * 2), min(ART_H, int(y1 + 2) // 2 * 2)
+    x0, y0 = max(-E, int(x0 + E) // 2 * 2 - E), max(0, int(y0) // 2 * 2)
+    x1, y1 = min(ART_W + E, int(x1 + E + 2) // 2 * 2 - E), min(ART_H, int(y1 + 2) // 2 * 2)
     sc.render.use_border = True
     sc.render.use_crop_to_border = True
-    sc.render.border_min_x, sc.render.border_max_x = x0 / ART_W, x1 / ART_W
+    sc.render.border_min_x, sc.render.border_max_x = (x0 + E) / (ART_W + 2 * E), (x1 + E) / (ART_W + 2 * E)
     sc.render.border_min_y, sc.render.border_max_y = 1 - y1 / ART_H, 1 - y0 / ART_H
     sc.render.filepath = os.path.join(OUT, 'char_%s.png' % k)
     bpy.ops.render.render(write_still=True)
