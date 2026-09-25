@@ -120,12 +120,11 @@ def shared_mesh(kind, i):
     bm = bmesh.new()
     r = random.Random(100 + i)
     if kind == 'brick':
-        # a rounded clay block: a cube with soft, slightly irregular edges
-        bmesh.ops.create_cube(bm, size=1.0)
-        bmesh.ops.bevel(bm, geom=list(bm.edges), offset=0.2, segments=4, affect='EDGES')
+        # a rounded clay block: a superellipsoid (a box with soft, seamless round edges)
+        bmesh.ops.create_uvsphere(bm, u_segments=48, v_segments=24, radius=1.0)
         for v in bm.verts:
-            v.co.x *= 1 + r.uniform(-0.03, 0.03)
-            v.co.z *= 1 + 0.05 * math.sin(3 * v.co.x + i)
+            v.co = type(v.co)([math.copysign(abs(c) ** 0.4, c) * 0.5 for c in v.co])
+            v.co.z *= 1 + 0.04 * math.sin(3 * v.co.x + i)
     elif kind in ('pebble', 'bush'):
         bmesh.ops.create_icosphere(bm, subdivisions=2 if kind == 'pebble' else 3, radius=1.0)
         for v in bm.verts:
@@ -298,10 +297,8 @@ def scatter(sc, holes_world, rnd):
     for i in range(34):
         x = rnd.uniform(-15, 15)
         flower(x, YARD_END - rnd.uniform(0.1, 1.0), 0.32, rnd.uniform(0.16, 0.24), rnd.randrange(4), rnd)
-    patch = ray_to_ground(655, 900)
-    bpy.ops.mesh.primitive_circle_add(radius=1, vertices=48, fill_type='NGON', location=(patch.x, patch.y, 0.005))
-    pc = obj_from('grass_patch', strip); pc.scale = (1.5, 1.0, 1)
-    for i in range(30):
+    patch = ray_to_ground(655, 900)             # a tuft-covered green patch (loose tufts, no flat disc)
+    for i in range(70):
         x, y = patch.x + rnd.uniform(-1.4, 1.4), patch.y + rnd.uniform(-0.9, 0.9)
         if free_of_holes(holes_world, x, y, 0.3):
             tuft(x, y, rnd.uniform(0.3, 0.5), rnd, gm)

@@ -93,8 +93,8 @@ def build(variant, location=(0, 0, 0), scale=1.0, tag='', ears=False, paw=False,
     cap = mat('cap_' + variant, P['cap'], 0.0, 0.3, coat=0.5)          # glossy vinyl, like the reference
     band = mat('band_' + variant, P['band'], 0.0, 0.32, coat=0.5)
     top = mat('top_' + variant, P['top_col'], 0.0, 0.35, coat=0.4)
-    white = mat('eye_white', (0.96, 0.96, 0.97), 0.0, 0.12, coat=1.0)
-    black = mat('eye_black', (0.0, 0.0, 0.0), 0.0, 0.05, coat=1.0)
+    white = mat('eye_white', (0.96, 0.96, 0.97), 0.0, 0.3, coat=0.2)
+    black = mat('eye_black', (0.0, 0.0, 0.0), 0.0, 0.6)          # matte: no mirrored sky, only the glints
     shine = mat('eye_shine', (1, 1, 1), emit=6.0)
     nose = mat('nose_dark', (0.03, 0.012, 0.02), 0.0, 0.2, coat=0.9)
     mouth = mat('mouth_dark', (0.10, 0.02, 0.04), 0.0, 0.5)
