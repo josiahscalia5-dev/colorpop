@@ -344,12 +344,12 @@ def backdrop(sc, rnd):
     DEPTH = 17.0                                # the meadow ends behind the far tree line: sky above it
     bpy.ops.mesh.primitive_grid_add(x_subdivisions=120, y_subdivisions=30, size=1, location=(0, 0, 0))
     m = obj_from('meadow', meadow)
-    m.scale = (90, DEPTH, 1)
-    m.location = (0, y0 + DEPTH / 2, 0)
+    m.scale = (90, DEPTH + 0.8, 1)                  # from under the grass strip (no seam) to the far tree line
+    m.location = (0, y0 - 0.8 + (DEPTH + 0.8) / 2, 0)
     bpy.ops.object.transform_apply(location=True, scale=True)
     for v in m.data.vertices:
         d = v.co.y - y0
-        v.co.z = 0.06 * d
+        v.co.z = 0.06 * max(0.0, d)
     for v in m.data.vertices:
         if v.co.y < y0 + 0.2:
             v.co.z = -0.02
@@ -366,8 +366,8 @@ def backdrop(sc, rnd):
             for i, (c0, c1) in enumerate((((0.03, 0.16, 0.02), (0.22, 0.48, 0.04)), ((0.06, 0.2, 0.02), (0.42, 0.52, 0.05))))]
     for i in range(60):
         x = rnd.uniform(-26, 26)
-        yy = y0 + rnd.uniform(0.8, 3.0)
         s_ = rnd.uniform(0.9, 1.6)
+        yy = y0 + 0.3 + s_ + rnd.uniform(0.0, 1.6)     # wholly behind the fence
         instance('bush', shared_mesh('crown', rnd.randrange(5)), (x, yy, s_ * 0.55), (s_ * 1.3, s_, s_ * 0.9), (0, 0, rnd.uniform(0, 6.28)),
                  bush[rnd.randrange(2)])
     for band, (ya, yb, n, smin, smax) in enumerate(((y0 + 4, y0 + 10, 20, 1.1, 1.8), (y0 + 12, y0 + 16.5, 46, 1.5, 2.4))):
