@@ -67,6 +67,9 @@ RAYS = {
     'gold_d': [[(333, 838), (377, 838), (372, 906), (333, 906)]],
 }
 BANNER = {'box': (100, 1317, 615, 1442), 'r': 62}       # "SPEED INCREASED!" pill
+# how out of focus the mockup paints each character (art px of Gaussian blur, undone before the
+# upscale, see sr.py); the rest are in focus (1 px)
+DEBLUR = {'yellow': 2.5, 'brown': 2.5, 'gold_b': 2.0, 'gold_c': 2.0, 'gold_e': 2.0}
 
 
 def front_arc(hole, x):
@@ -289,7 +292,8 @@ def export(P, B):
     layers = []
     for k, c in CHARS.items():
         hk = c['hole']
-        rgba2, xy, rgba = sharp_sprite(NAME, I, B, char_region(k, masks[k]), masks[k], edges[hk], ext=30, hires=HIRES)
+        rgba2, xy, rgba = sharp_sprite(NAME, I, B, char_region(k, masks[k]), masks[k], edges[hk], ext=30, hires=HIRES,
+                                       deblur_px=DEBLUR.get(k, 1.0))
         if xy[0] == 0 and masks[k][:, 0].any():
             # cut by the screen edge in the reference: a soft edge instead of a straight cut, for
             # when it pops up in a hole away from the edge

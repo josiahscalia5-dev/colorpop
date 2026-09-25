@@ -1,6 +1,6 @@
 # Color Pop — Android game (work in progress)
 
-**Status: playable test build 0.4 (before Level 10).** Home and Levels 1, 3, 6 and 8 are implemented as an Android app
+**Status: playable test build 0.5 (before Level 10; character quality awaiting the owner's approval).** Home and Levels 1, 3, 6 and 8 are implemented as an Android app
 (Java, no dependencies) and verified by rendering the real screens on 14 phone configurations and
 comparing them with the reference. Do not start over — continue from here.
 
@@ -154,10 +154,12 @@ background, so sprites over the background give back the reference), light layer
 
 Character sharpness: the new levels' characters are exported at twice the art resolution
 (`"scale": 2` in level.json) so they are as crisp as Level 1's on a phone. `design-pipeline/sr.py`
-rebuilds their fine detail with Real-ESRGAN (x4plus, CPU via `pip install ncnn`; models in
-`design-pipeline/_models/`, not committed, from the Real-ESRGAN ncnn release) from the owner's
-enlargement, keeping the enlargement's own shapes and colours (only detail finer than the drawing
-itself comes from the network). Each character's alpha is tight around it, so no background is
+reconstructs them: no higher-resolution original exists (the owner's uploads are enlargements of
+the 1441x1536 JPEG sheet, where the Level 8 phone is 362 px wide; Level 1's original is 622), so the
+blur is first inverted (Richardson-Lucy, ~1 art px for characters in focus, 2-2.5 px for the ones the
+mockup paints out of focus, per character in the level scripts), then Real-ESRGAN (x4plus, CPU via
+`pip install ncnn`; models in `design-pipeline/_models/`, not committed, from the Real-ESRGAN ncnn
+release) upscales them, keeping the enlargement's own shapes, colours and lighting. Each character's alpha is tight around it, so no background is
 carried along when it pops up in another hole, and a far-away character is not blown up in a front
 hole (at most 1.3x, `LevelScreen.pick`).
 

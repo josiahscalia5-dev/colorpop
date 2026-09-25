@@ -487,6 +487,10 @@ public class ScreenRenderTest {
 
     @Test
     public void newLevelsOnAPixelProXl() throws IOException {
+        GameView v1 = view(PIXEL_PRO_XL);
+        openLevel(v1);
+        run(v1, 2.5f);                     // Level 1's reference moment (00:28)
+        render(v1, "pixel_level1_reference_moment");
         for (int id : NEW_LEVELS) {
             GameView v = view(PIXEL_PRO_XL);
             LevelScreen l = openLevel(v, id);

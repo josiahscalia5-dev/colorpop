@@ -75,7 +75,7 @@ def calibrate_combo(I, scene, number):
     return e0, e, best
 
 
-def sharp_sprite(name, I, B, region, core, edge, ext=30, hires=None):
+def sharp_sprite(name, I, B, region, core, edge, ext=30, hires=None, deblur_px=1.0):
     """A character sprite at twice the art resolution, as sharp as the Level 1 characters: the body
     from the super-resolved enlargement (sr.py), the alpha tight around the character (its outline
     plus a 3 px soft edge: no background carried along when it pops up elsewhere), the colour below
@@ -91,7 +91,8 @@ def sharp_sprite(name, I, B, region, core, edge, ext=30, hires=None):
     bx0, by0 = 2 * x0, 2 * y0
     bx1, by1 = min(Wh, 2 * (x0 + w1)), min(Hh, 2 * (y0 + h1))
     m = 24
-    sharp, (sx0, sy0, sx1, sy1), _ = sr.sharp_region(hires, (max(0, bx0 - m), max(0, by0 - m), min(Wh, bx1 + m), min(Hh, by1 + m)))
+    sharp, (sx0, sy0, sx1, sy1), _ = sr.sharp_region(hires, (max(0, bx0 - m), max(0, by0 - m), min(Wh, bx1 + m), min(Hh, by1 + m)),
+                                                     deblur_px=deblur_px, keep=10.0 if deblur_px >= 2 else 6.0)
     pic = np.zeros((2 * h1, 2 * w1, 3), np.float32)
     ys, xs = slice(by0 - sy0, by1 - sy0), slice(bx0 - sx0, bx1 - sx0)
     pic[:by1 - by0, :bx1 - bx0] = sharp[ys, xs]
@@ -99,9 +100,9 @@ def sharp_sprite(name, I, B, region, core, edge, ext=30, hires=None):
     a2 = np.clip(up[..., 3] / 255.0, 0, 1)
     solid = cv2.resize((rgba1[..., 3] > 250).astype(np.float32), (2 * w1, 2 * h1), interpolation=cv2.INTER_LINEAR)
     e2 = cv2.resize(extm.astype(np.float32), (2 * w1, 2 * h1), interpolation=cv2.INTER_LINEAR) > 0.01
-    # the super-resolved picture on the solid body; the matte's own colours on the soft edge and
-    # the continued colour below the rim
-    w = np.clip((solid - 0.3) / 0.6, 0, 1)[..., None] * (~e2)[..., None]
+    # the reconstructed picture everywhere it exists (also on the soft edge: the matte's own
+    # extrapolated colours there make a dark fringe); the continued colour below the rim
+    w = (~e2).astype(np.float32)[..., None]
     w[by1 - by0:] = 0
     rgb = pic * w + np.clip(up[..., :3], 0, 255) * (1 - w)
     # a crisp silhouette: the soft edge of the upscaled alpha steepened

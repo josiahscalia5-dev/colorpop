@@ -1,11 +1,15 @@
 """Super-resolution of the character art (Levels 3, 6, 8, ...).
 
-The screens of the second reference sheet were drawn ~355 px wide; the app shows them ~4x that on
-a phone, so their characters look soft next to Level 1's (cut from a full-size original). The
-characters are therefore rebuilt at twice the art resolution with Real-ESRGAN (x4plus, run on the
-CPU with ncnn) from the owner's enlargement, and kept faithful to it: the result keeps the
-enlargement's own low frequencies (shapes, colours, shading) and only takes the fine detail (crisp
-outlines, eyes, edges) from the network -- seen at the original size it is the original.
+The screens of the second reference sheet were drawn ~355 px wide (no larger original exists: the
+owner's uploads are enlargements of the same sheet); the app shows them ~4x that on a phone, so their
+characters look soft next to Level 1's (cut from a full-size original). They are reconstructed at
+twice the art resolution:
+  1. the blur is inverted first (Richardson-Lucy deconvolution, Gaussian blur of `deblur` art px:
+     ~1 px for characters in focus, 2-2.5 px for the ones the mockup paints out of focus);
+  2. Real-ESRGAN (x4plus, run on the CPU with ncnn) upscales the deblurred art 4x, which is then
+     reduced to 2x (crisp outlines, eyes, hat edges);
+  3. the enlargement's own low frequencies (shapes, colours, shading, lighting) are kept, so the
+     design and colours stay the owner's.
 
 Models (not committed): design-pipeline/_models/realesrgan-x4plus.{param,bin}, from
 https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesrgan-ncnn-vulkan-20220424-ubuntu.zip
@@ -73,16 +77,29 @@ def hires_canvas(name):
     return canvas, have
 
 
-def sharp_region(hires, box, sigma=2.2):
-    """Real-ESRGAN detail for hires[box] (x0, y0, x1, y1 in hires px): the enlargement is taken back
-    to the drawing's own resolution (1/4), upscaled x4 by the network, and only the network's detail
-    above the drawing's resolution is kept on top of the enlargement."""
+def deblur(img, sigma, iters=25):
+    """Richardson-Lucy deconvolution of a Gaussian blur of `sigma` px."""
+    if sigma <= 0:
+        return img
+    k = int(np.ceil(sigma * 3)) * 2 + 1
+    blur = lambda x: cv2.GaussianBlur(x, (k, k), sigma, borderType=cv2.BORDER_REFLECT)
+    obs = img.astype(np.float32) + 1
+    est = obs.copy()
+    for _ in range(iters):
+        est = np.clip(est * blur(obs / np.maximum(blur(est), 1e-3)), 1, 256)
+    return est - 1
+
+
+def sharp_region(hires, box, deblur_px=1.0, keep=6.0):
+    """The reconstruction of hires[box] (x0, y0, x1, y1 in hires px, 2x art): the enlargement at art
+    resolution, deblurred by `deblur_px` art px, upscaled x4 by the network and reduced to 2x art;
+    below `keep` hires px the enlargement's own shading and colours."""
     x0, y0, x1, y1 = box
     x0, y0 = x0 - x0 % 4, y0 - y0 % 4
     x1, y1 = x1 + (-x1) % 4, y1 + (-y1) % 4
     crop = hires[y0:y1, x0:x1]
-    low = cv2.resize(crop, ((x1 - x0) // 4, (y1 - y0) // 4), interpolation=cv2.INTER_AREA)
-    sr = upscale4(low)
-    detail = sr - cv2.GaussianBlur(sr, (0, 0), sigma)
-    base = cv2.GaussianBlur(crop, (0, 0), sigma)
-    return np.clip(base + detail, 0, 255), (x0, y0, x1, y1), sr
+    art = cv2.resize(crop, ((x1 - x0) // 2, (y1 - y0) // 2), interpolation=cv2.INTER_AREA)
+    up = upscale4(deblur(art, deblur_px))
+    sr = cv2.resize(up, (x1 - x0, y1 - y0), interpolation=cv2.INTER_AREA)
+    out = sr - cv2.GaussianBlur(sr, (0, 0), keep) + cv2.GaussianBlur(crop, (0, 0), keep)
+    return np.clip(out, 0, 255), (x0, y0, x1, y1), sr
