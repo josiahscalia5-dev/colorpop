@@ -1,13 +1,13 @@
 # Color Pop — Android game (work in progress)
 
-**Status: playable test build 0.8 (before Level 10): Level 3 tap-and-fire; Level 8 in its new, owner-approved design, with its harder rules.** Home and Levels 1, 3, 6 and 8 are implemented as an Android app
+**Status: playable test build 0.9 (before Level 10): Level 3 rebuilt in high resolution (owner-approved) with its tap-and-fire; Level 8 in its new, owner-approved design, with its harder rules.** Home and Levels 1, 3, 6 and 8 are implemented as an Android app
 (Java, no dependencies) and verified by rendering the real screens on 14 phone configurations and
 comparing them with the reference. Do not start over — continue from here.
 
 Screens:
 1. Welcome / Home screen — done
 2. Level 1 ("HIT THE GREEN ONES!") — done
-3. Level 3 ("HIT THE PURPLE ONES!", combo, tap-and-fire with a demonstration) — done
+3. Level 3 ("HIT THE PURPLE ONES!", combo, tap-and-fire with a demonstration) — done, rebuilt in high resolution (see below)
 4. Level 6 ("HIT THE STARS!", combo, bombs) — done
 5. Level 8 ("HIT THE GOLD ONES!", look-alike decoys, SPEED INCREASED!) — done, new design (see below)
 6. Level 10, Level Complete, Worlds — to do (second reference sheet)
@@ -28,7 +28,7 @@ Difficulty rises gradually through the rules only (the screens are the reference
 
 `ScreenRenderTest.difficultyRisesGraduallyAndStaysFair` plays every level with a simulated human
 (0.45–0.85 s reactions, 1 miss in 8, 1 decoy in 12 tapped by mistake): Levels 1, 3 and 6 are always won,
-each leaving less time to spare than the one before (16, 12.6, 12 s). On Level 8 a decoy ends the round, so
+each leaving less time to spare than the one before (16, 14, 12 s). On Level 8 a decoy ends the round, so
 it is measured with a careful player (0.05 s slower, 1 decoy in 50): it wins 42 % of rounds (the rest are
 lost on a decoy or on time), a careless one 21 %. Level 8's rules (level.json): `decoy_fails`,
 `hop` {chance at the start / end of the round, seconds up before moving}, `ramp` {hold, gap, rise factors
@@ -195,6 +195,23 @@ rules are unchanged. The approved mockup is `reference/level8_new/mockup.png` (a
 - The app draws a level's background, sprites, pause button and glow layers from 2x art when
   level.json says `"scale": 2`.
 - `levels/level8.py` (the sheet version) is kept for reference only and writes elsewhere.
+
+Level 3 in high resolution: the sheet's Level 3 (a ~355 px wide screen) could not become as crisp as
+Level 1 -- even deblurring and a neural upscale stay soft -- so it was rebuilt in 3D the same way,
+keeping its own design (owner-approved): the reference's capped round critters (purple targets with a
+tuft and dark eye patches, pink and red decoys with knobs), its seven holes (the camera is fitted to
+their places and sizes), the dirt yard with rounded clay-brick rims, grass strip, fence with a pale
+lower rail, sunlit hedge and trees under a blue sky, leaves and flowers; the HUD in Level 3's layout
+(score on the left, the tilted 3x COMBO! on the right) drawn crisply. Gameplay and rules (tap-and-fire,
+the demonstration, combo, purple burst) are unchanged. Reference: `reference/level3_new/mockup.png`
+(and `reference/screens/level3_new.png`, the reference moment with the demonstration's glove).
+- `design-pipeline/level3_3d/`: `scene.py`, `critter.py` (characters), `sky.py`, `compose.py` (HUD:
+  fixed part, live slots, combo badge; mockup), `portrait.py` (the panel icon), `render_assets.py`
+  (as Level 8's; `--extra` renders two pop-up-only decoy looks for the big holes), `export.py`
+  (writes `app-assets/level3/` and the reference images; keeps the demonstration's glove `hand.png`).
+- A character with `"spawn_only": true` in level.json only pops up (it is not in the opening wave).
+- `levels/level3.py` and `levels/level3_fire.py` (the sheet version) are kept for reference only and
+  write to `app-assets/level3_sheet/`.
 
 ## Remaining work
 1. Level 10, Level Complete and Worlds screens (second sheet), coins.

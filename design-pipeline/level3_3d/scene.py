@@ -441,6 +441,8 @@ def build(sc, seed=5):
 # the reference moment: two purples (targets), the pink and the red decoys, three empty holes
 CAST = {'H1': 'pink', 'H2': 'purple', 'H3': 'red', 'H4': 'purple', 'H5': None, 'H6': None, 'H7': None}
 CHAR_SCALE, CHAR_SINK, CHAR_TILT = 1.0, -0.62, -21.0
+# pop-up-only looks (not in the opening wave): the decoys in the big holes, so no look is enlarged much
+EXTRA = {'H7': 'pink', 'H6': 'red'}
 
 
 def characters(sc, holes_world, cast=CAST):

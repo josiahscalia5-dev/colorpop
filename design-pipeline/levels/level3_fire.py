@@ -1,5 +1,8 @@
 """Level 3's tap-and-fire: the demonstration hand and the rules (python3 levels/level3_fire.py).
 
+Works on the superseded sheet-based Level 3 (app-assets/level3_sheet/, written by levels/level3.py);
+the app's Level 3 (design-pipeline/level3_3d/export.py) keeps the glove it made: app-assets/level3/hand.png.
+
 The hand is the white glove of the reference's hint (app-assets/level3/hint.png), cut alone -- the
 gem, trail and sparks around it are now drawn by the game (the shot and the hit burst) -- and
 reconstructed at twice the art resolution like the Level 3 characters (sr.sharp_region on the
@@ -14,7 +17,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from paths import asset_dir
 import sr
 
-OUT = asset_dir('level3')
+OUT = asset_dir('level3_sheet')
 LEVEL = os.path.join(OUT, 'level.json')
 L = json.load(open(LEVEL))
 HX, HY = L['hint']['x'], L['hint']['y']

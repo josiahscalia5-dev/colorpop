@@ -6,9 +6,9 @@ The HUD is the reference's (Level 3 layout: score on the left, the combo badge o
 with vector shapes and the game's font (Lilita One) by the Level 8 compositor's Hud, so it is as
 crisp as the 3D art.
 """
-import sys, os, importlib.util
+import sys, os, json, importlib.util
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageFont
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -37,31 +37,74 @@ def scene_image(render_path):
     return C8.glow(rgba[..., :3] * a + sky3.sky(W, H) * (1 - a), thresh=0.94, s=W / ART_W / 2), W / ART_W
 
 
-def hud(h, portrait_path, state):
-    C8.pause_button(h)
+# the live numbers (drawn by the app; level.json "live_text"): the Level 8 HUD's slots
+LIVE = json.loads(json.dumps(C8.LIVE))
+SCORE_LABEL, SCORE_SAMPLE = 'SCORE: ', '320'
+# the combo badge: "COMBO!" (a picture) under the live "3x", tilted 5 degrees like the reference
+COMBO_X, COMBO_NUM_Y, COMBO_WORD_Y, COMBO_TILT = 572, 358, 426, 5.0
+COMBO_NUMBER = dict(fill_top=[255, 244, 120], fill_bottom=[246, 150, 20], outline_color=[48, 18, 6],
+                    box=[COMBO_X - 70, COMBO_NUM_Y, COMBO_X + 70, COMBO_NUM_Y + 50], align='center', size=66,
+                    scale_x=1.08, outline=6.5, shadow=4.0, rotate=-COMBO_TILT)
+
+
+def score_layout():
+    """x of the "SCORE:" label and of the live number: "SCORE: 320" centred in the score panel."""
+    font = ImageFont.truetype(C8.FONT, 400)
+    f = 44 / 400 * 0.92
+    full = SCORE_LABEL + SCORE_SAMPLE
+    bb = font.getbbox(full)
+    xl = (SCORE_BOX[0] + SCORE_BOX[2]) / 2 - (bb[2] - bb[0]) * f / 2
+    xn = xl + (font.getlength(SCORE_LABEL) + font.getbbox(SCORE_SAMPLE)[0] - bb[0]) * f
+    return round(xl, 1), round(xn, 1)
+
+
+def hud_static(h, portrait_path):
+    """Everything of the HUD that does not change during play (drawn into the background)."""
     h.panel((250, 106, 474, 168), r=24, alpha=190)
     h.text('LEVEL 3', 362, 118, 44, align='center', shadow=2.5)
     h.panel((488, 102, 700, 172), r=30, alpha=220)
     h.paste(C8.stopwatch(60), (510, 112, 556, 158))
-    h.text(state['timer'], 568, 120, 42, scale_x=0.86, shadow=2.0)
     h.panel((26, 204, 698, 344), r=26, alpha=205)
     if portrait_path:
         h.paste(Image.open(portrait_path), (24, 180, 186, 342))
     h.text('HIT THE PURPLE ONES!', 184, 252, 40, shadow=2.5, scale_x=0.88)
-    h.text(state['left'], 626, 238, 86, align='center', ow=4.0, shadow=3.0)
     h.panel(SCORE_BOX, r=30, alpha=170)
-    h.text('SCORE: ' + state['score'], (SCORE_BOX[0] + SCORE_BOX[2]) / 2, 382, 44, align='center', shadow=2.5)
+    h.text(SCORE_LABEL.strip(), score_layout()[0], 382, 44, shadow=2.5)
 
 
-def combo_badge(size, k, n):
-    """'3x' over 'COMBO!', tilted like the reference (drawn level, then turned 5 degrees)."""
+def live(h, key, text):
+    sp = LIVE[key]
+    x = (sp['box'][0] + sp['box'][2]) / 2 if sp['align'] == 'center' else sp['box'][0]
+    h.text(text, x, sp['box'][1], sp['size'], align=sp['align'], fill_top=tuple(sp['fill_top']), fill_bot=tuple(sp['fill_bottom']),
+           outline=tuple(sp['outline_color']), ow=sp['outline'], shadow=sp['shadow'], scale_x=sp['scale_x'])
+
+
+def _tilted(size, k, draw, cx, cy):
+    """A HUD element drawn level on a transparent layer, then turned COMBO_TILT degrees about (cx, cy) art px."""
     h = Hud(Image.new('RGBA', size, (0, 0, 0, 0)), k)
-    h.text('%dx' % n, 572, 358, 66, align='center', ow=6.5, shadow=4.0, scale_x=1.08, **COMBO_TEXT)
-    h.text('COMBO!', 572, 426, 64, align='center', ow=6.5, shadow=4.0, scale_x=1.0, **COMBO_TEXT)
-    return h.done_rgba().rotate(5, resample=Image.BICUBIC, center=(572 * k, 426 * k))
+    draw(h)
+    return h.done_rgba().rotate(COMBO_TILT, resample=Image.BICUBIC, center=(cx * k, cy * k))
+
+
+def combo_word(size, k):
+    return _tilted(size, k, lambda h: h.text('COMBO!', COMBO_X, COMBO_WORD_Y, 64, align='center', ow=6.5, shadow=4.0,
+                                             fill_top=(255, 244, 120), fill_bot=(246, 150, 20), outline=(48, 18, 6)),
+                   COMBO_X, COMBO_WORD_Y + 22)
+
+
+def combo_number(size, k, n):
+    """As the app draws the live "3x" (OutlineText.Slot with rotate: about the middle of its digits)."""
+    sp = COMBO_NUMBER
+    digit_h = ImageFont.truetype(C8.FONT, 400).getbbox('0')
+    digit_h = (digit_h[3] - digit_h[1]) / 400 * sp['size']
+    def draw(h):
+        h.text('%dx' % n, COMBO_X, sp['box'][1], sp['size'], align='center', ow=sp['outline'], shadow=sp['shadow'],
+               scale_x=sp['scale_x'], fill_top=tuple(sp['fill_top']), fill_bot=tuple(sp['fill_bottom']), outline=tuple(sp['outline_color']))
+    return _tilted(size, k, draw, COMBO_X, sp['box'][1] + digit_h / 2)
 
 
 def compose(render_path, portrait_path, out_path, state=None, hud_on=True):
+    """The mockup (the approved one was made from these same parts)."""
     state = state or REFERENCE_STATE
     img, k = scene_image(render_path)
     base = Image.fromarray(np.clip(img, 0, 255).astype(np.uint8)).convert('RGBA')
@@ -69,9 +112,17 @@ def compose(render_path, portrait_path, out_path, state=None, hud_on=True):
         base.convert('RGB').save(out_path)
         return
     h = Hud(base, k)
-    hud(h, portrait_path, state)
+    C8.pause_button(h)
+    hud_static(h, portrait_path)
+    live(h, 'timer', state['timer'])
+    live(h, 'target', state['left'])
+    xl, xn = score_layout()
+    LIVE['score']['box'][0] = xn
+    live(h, 'score', state['score'])
     screen = h.done_rgba()
-    screen.alpha_composite(combo_badge(screen.size, k, state['combo']))
+    if state.get('combo', 0) >= 2:
+        screen.alpha_composite(combo_word(screen.size, k))
+        screen.alpha_composite(combo_number(screen.size, k, state['combo']))
     screen.convert('RGB').save(out_path)
 
 

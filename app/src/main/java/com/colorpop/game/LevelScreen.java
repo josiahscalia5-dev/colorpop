@@ -667,7 +667,9 @@ final class LevelScreen extends Screen {
             l.density = (float) c.optDouble("scale", 1);
             l.tint = averageColour(l.bitmap);
             looks.add(l);
-            nativeLook[home.index] = l;
+            if (!c.optBoolean("spawn_only", false)) {
+                nativeLook[home.index] = l;           // (a pop-up-only look is not in the opening wave)
+            }
             if (!l.introOnly) {
                 byRole.get(role).add(l);
             }

@@ -324,9 +324,9 @@ public class ScreenRenderTest {
 
     // ------------------------------------------------------------------ Levels 3, 6 (level.json driven)
     private static final int[] NEW_LEVELS = {3, 6, 8};
-    /** Phone shapes of the new references (art 702 / 712 / 724 wide): the render compared with them. */
+    /** Phone shapes of the new references (art 724 x 1570 / 712 wide / 724 x 1570): the render compared with them. */
     private static final Device[] REFERENCE_SHAPES = {
-            new Device("reference", 1080, 2286, "xxhdpi", 0, 0, 0, 0),
+            new Device("reference", 1080, 2342, "xxhdpi", 0, 0, 0, 0),
             new Device("reference", 1080, 2254, "xxhdpi", 0, 0, 0, 0),
             new Device("reference", 1080, 2342, "xxhdpi", 0, 0, 0, 0)};
 

@@ -1,6 +1,10 @@
 """Level 3 art: "HIT THE PURPLE ONES!" (farm).
 
-Reference: reference/screens/level3.png (702 x 1486 art px). Output: app-assets/level3/ + level.json.
+SUPERSEDED: the app's Level 3 is now the high-resolution rebuild approved by the owner
+(design-pipeline/level3_3d/). This script is kept for reference; it writes to app-assets/level3_sheet/
+(not packaged in the app) so it can never overwrite the new Level 3.
+
+Reference: reference/screens/level3.png (702 x 1486 art px). Output: app-assets/level3_sheet/ + level.json.
 See screen_art.py for the method. Everything here is measured on the reference; coordinates are
 art px.
 """
@@ -11,7 +15,7 @@ from screen_art import *
 from paths import ROOT, work
 
 NAME = 'level3'
-OUT = os.path.join(ROOT, 'app-assets', NAME)
+OUT = os.path.join(ROOT, 'app-assets', 'level3_sheet')
 I = load_ref(NAME)
 H, W = I.shape[:2]
 Y, X = grid(I.shape)
@@ -306,7 +310,7 @@ def export(masks, edges, openings, B, parts):
     best.pop('text', None)
     level['combo']['number'] = {k: (round(v, 3) if isinstance(v, float) else v) for k, v in best.items()}
     level['rules'] = RULES
-    write_level(NAME, level)          # then levels/level3_fire.py adds the demonstration hand
+    write_level('level3_sheet', level)          # then levels/level3_fire.py adds the demonstration hand
     # the reference moment rebuilt from the parts (checked by compare_screens.py)
     for key, t in (('timer', '00:18'), ('target', '8'), ('score', '320')):
         scene = draw_text(scene, t, level['live_text'][key])
