@@ -101,16 +101,20 @@ final class LevelScreen extends Screen {
     /** A picture cut from the reference, drawn at its reference position (art px). */
     static final class Sprite {
         final Bitmap bitmap;
-        final float x, y;
+        final float x, y, w, h;            // art px
 
-        Sprite(Bitmap bitmap, float x, float y) {
+        Sprite(Bitmap bitmap, float x, float y, float density) {
             this.bitmap = bitmap;
             this.x = x;
             this.y = y;
+            this.w = bitmap.getWidth() / density;
+            this.h = bitmap.getHeight() / density;
         }
 
+        /** From a level.json entry {file, x, y, scale (bitmap px per art px, default 1)}. */
         static Sprite of(Art art, JSONObject e) {
-            return e == null ? null : new Sprite(art.bitmap(e.optString("file")), (float) e.optDouble("x"), (float) e.optDouble("y"));
+            return e == null ? null : new Sprite(art.bitmap(e.optString("file")), (float) e.optDouble("x"), (float) e.optDouble("y"),
+                    (float) e.optDouble("scale", 1));
         }
     }
 
@@ -199,7 +203,7 @@ final class LevelScreen extends Screen {
         final int colour, role;
         final boolean introOnly;
         Bitmap glow;
-        float glowX, glowY;
+        float glowX, glowY, glowDensity = 1;
         int tint = 0xffffffff;
 
         Look(Bitmap bitmap, float x, float y, Hole home, int colour, int role, boolean introOnly) {
@@ -395,7 +399,7 @@ final class LevelScreen extends Screen {
                 // the character's light: added to whatever lies beneath, not clipped by the rim
                 float p = Math.max(0, Math.min(1, pose()));
                 RectF g = xf.rect(left() + (look.glowX - look.x) * f, top() + (look.glowY - look.y) * f,
-                        look.glow.getWidth() * f, look.glow.getHeight() * f, new RectF());
+                        look.glow.getWidth() / look.glowDensity * f, look.glow.getHeight() / look.glowDensity * f, new RectF());
                 int s2 = c.save();
                 alpha = transform(c);
                 light.setAlpha((int) (255 * alpha * p * p));
@@ -432,7 +436,7 @@ final class LevelScreen extends Screen {
         JSONObject a = L.optJSONObject("art"), b = L.optJSONObject("bg"), p = L.optJSONObject("pause");
         artW = a.optInt("w");
         artH = a.optInt("h");
-        bg = new Fit.Backdrop(art.bitmap(b.optString("file")), b.optInt("pad_side"), b.optInt("pad_top"));
+        bg = new Fit.Backdrop(art.bitmap(b.optString("file")), b.optInt("pad_side"), b.optInt("pad_top"), (float) b.optDouble("scale", 1));
         JSONObject f = L.optJSONObject("fg_bottom");
         fg = f == null ? null : art.bitmap(f.optString("file"));
         fgX = f == null ? 0 : (float) f.optDouble("x");
@@ -449,7 +453,7 @@ final class LevelScreen extends Screen {
         JSONObject hit = p.optJSONObject("hit");
         float cx = (float) hit.optDouble("cx"), cy = (float) hit.optDouble("cy"), r = (float) hit.optDouble("r");
         pauseButton = new SpriteButton(art.bitmap(p.optString("file")), (float) p.optDouble("x"), (float) p.optDouble("y"),
-                new float[]{cx - r, cy - r, cx + r, cy + r}, true, xf);
+                new float[]{cx - r, cy - r, cx + r, cy + r}, true, xf, (float) p.optDouble("scale", 1));
         JSONObject live = L.optJSONObject("live_text");
         hudText = legacy ? game.text : new OutlineText(art.font, style(live.optJSONObject("timer")));
         timerSlot = new OutlineText.Slot(live.optJSONObject("timer"));
@@ -534,6 +538,7 @@ final class LevelScreen extends Screen {
                 l.glow = art.bitmap(g.optString("file"));
                 l.glowX = (float) g.optDouble("x");
                 l.glowY = (float) g.optDouble("y");
+                l.glowDensity = (float) g.optDouble("scale", 1);
             }
             l.density = (float) c.optDouble("scale", 1);
             l.tint = averageColour(l.bitmap);
@@ -1014,7 +1019,7 @@ final class LevelScreen extends Screen {
         if (sp == null || alpha <= 0) {
             return;
         }
-        xf.rect(sp.x, sp.y, sp.bitmap.getWidth(), sp.bitmap.getHeight(), dst);
+        xf.rect(sp.x, sp.y, sp.w, sp.h, dst);
         paint.setAlpha((int) (255 * alpha));
         c.drawBitmap(sp.bitmap, null, dst, paint);
         paint.setAlpha(255);
@@ -1039,7 +1044,7 @@ final class LevelScreen extends Screen {
             float a = bannerT > BANNER_TIME - 0.4f ? (BANNER_TIME - bannerT) / 0.4f : 1;
             float k = 0.85f + 0.15f * Ui.easeOutBack(in);
             int save = c.save();
-            c.scale(k, k, xf.x(banner.x + banner.bitmap.getWidth() / 2f), xf.y(banner.y + banner.bitmap.getHeight() / 2f));
+            c.scale(k, k, xf.x(banner.x + banner.w / 2f), xf.y(banner.y + banner.h / 2f));
             drawSprite(c, banner, Math.max(0, Math.min(1, a * in * 1.5f)));
             c.restoreToCount(save);
         }
@@ -1047,7 +1052,7 @@ final class LevelScreen extends Screen {
         if (comboWord != null && combo >= 2) {
             float k = comboPulse > 0 ? 1 + 0.2f * (float) Math.sin(Math.PI * (1 - comboPulse / 0.3f)) : 1;
             int save = c.save();
-            c.scale(k, k, xf.x(comboWord.x + comboWord.bitmap.getWidth() / 2f), xf.y(comboWord.y + comboWord.bitmap.getHeight() / 2f));
+            c.scale(k, k, xf.x(comboWord.x + comboWord.w / 2f), xf.y(comboWord.y + comboWord.h / 2f));
             drawSprite(c, comboWord, 1);
             comboSlot.draw(c, comboText, combo + "x", xf);
             c.restoreToCount(save);
@@ -1081,7 +1086,7 @@ final class LevelScreen extends Screen {
         for (Burst q : bursts) {
             float u = q.t / BURST_TIME;
             float k = q.scale * (0.6f + 0.55f * u);
-            float bw = burst.bitmap.getWidth() * k, bh = burst.bitmap.getHeight() * k;
+            float bw = burst.w * k, bh = burst.h * k;
             float left = q.x - (burstAnchorX - burst.x) * k, top = q.y - (burstAnchorY - burst.y) * k;
             xf.rect(left, top, bw, bh, dst);
             paint.setAlpha((int) (255 * Math.max(0, 1 - u * u)));

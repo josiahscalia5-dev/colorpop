@@ -66,14 +66,20 @@ final class Fit {
         private final Paint fade = new Paint();
         private final BitmapShader shader;
         private final Matrix matrix = new Matrix();
-        private final float padLeft, padTop, width, height;
+        private final float padLeft, padTop, width, height, density;
         private float softW, softH;
 
         Backdrop(Bitmap bitmap, float padLeft, float padTop) {
+            this(bitmap, padLeft, padTop, 1);
+        }
+
+        /** density: bitmap px per art px (2 for a picture drawn at twice the art resolution). */
+        Backdrop(Bitmap bitmap, float padLeft, float padTop, float density) {
             this.padLeft = padLeft;
             this.padTop = padTop;
-            width = bitmap.getWidth();
-            height = bitmap.getHeight();
+            this.density = density;
+            width = bitmap.getWidth() / density;
+            height = bitmap.getHeight() / density;
             shader = new BitmapShader(bitmap, Shader.TileMode.CLAMP, Shader.TileMode.MIRROR);
             paint.setShader(shader);
             softShader = new BitmapShader(blurred(bitmap, 8, 3), Shader.TileMode.CLAMP, Shader.TileMode.CLAMP);
@@ -83,7 +89,7 @@ final class Fit {
         }
 
         void draw(Canvas c, Xf xf, int w, int h) {
-            matrix.setScale(xf.s, xf.s);
+            matrix.setScale(xf.s / density, xf.s / density);
             matrix.postTranslate(xf.x(-padLeft), xf.y(-padTop));
             shader.setLocalMatrix(matrix);
             float left = xf.x(-padLeft), right = left + width * xf.s;

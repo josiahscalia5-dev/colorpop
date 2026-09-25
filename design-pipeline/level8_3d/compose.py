@@ -98,11 +98,14 @@ class Hud:
         x0, y0, x1, y1 = [int(self.f(v)) for v in box]
         self.layer.alpha_composite(im.convert('RGBA').resize((x1 - x0, y1 - y0), Image.LANCZOS), (x0, y0))
 
-    def done(self):
+    def done_rgba(self):
         small = self.layer.resize(self.base.size, Image.LANCZOS)
         out = self.base.copy()
         out.alpha_composite(small)
-        return out.convert('RGB')
+        return out
+
+    def done(self):
+        return self.done_rgba().convert('RGB')
 
 
 def stopwatch(size):
@@ -153,65 +156,132 @@ def flame(size):
     return im
 
 
-def compose(render_path, portrait_path, out_path, hud=True, gold_centres=(), state=None):
-    state = state or {'timer': '00:20', 'left': '15', 'score': '2,480', 'banner': True}
-    rgba = np.asarray(Image.open(render_path).convert('RGBA')).astype(np.float32)
-    H, W = rgba.shape[:2]
-    k = W / ART_W
-    a = rgba[..., 3:] / 255
-    img = rgba[..., :3] * a + sky.sky(W, H) * (1 - a)
-    img = glow(img, s=k / 2)
-    halo = np.zeros((H, W), np.float32)
-    for (cx, cy, r) in gold_centres:
-        cv2.circle(halo, (int(cx * k), int(cy * k)), int(r * 0.95 * k), 1.0, -1, cv2.LINE_AA)
-    halo = cv2.GaussianBlur(halo, (0, 0), 26 * k / 2)
-    img = np.clip(img + halo[..., None] * np.array([255, 170, 40.0]) * 0.17, 0, 255)
-    base = Image.fromarray(np.clip(img, 0, 255).astype(np.uint8)).convert('RGBA')
-    # sparkles around the gold miners
-    sp = Image.new('RGBA', base.size, (0, 0, 0, 0))
-    rnd = np.random.default_rng(5)
-    for (cx, cy, r) in gold_centres:
-        for i in range(5):
-            ang = rnd.uniform(0, 2 * np.pi); d = r * rnd.uniform(0.8, 1.25)
-            sparkle(sp, (cx + d * np.cos(ang)) * k, (cy - abs(d * np.sin(ang)) * 0.9) * k, rnd.uniform(8, 16) * k, rnd.uniform(0.7, 1.0))
-    sp_blur = sp.filter(ImageFilter.GaussianBlur(3 * k))
-    base.alpha_composite(sp_blur); base.alpha_composite(sp)
-    if not hud:
-        base.convert('RGB').save(out_path)
-        return
-    h = Hud(base, k)
-    # top bar: pause, LEVEL 8, timer
+# the live numbers (drawn by the app; level.json "live_text") -- art px, Lilita One, like OutlineText
+WHITE = {'fill_top': [255, 255, 255], 'fill_bottom': [228, 232, 245], 'outline_color': [6, 12, 28]}
+LIVE = {
+    'timer':  dict(WHITE, box=[568, 120, 700, 152], align='left', size=42, scale_x=0.86, outline=3.5, shadow=2.0),
+    'target': dict(WHITE, box=[586, 238, 666, 300], align='center', size=86, scale_x=0.92, outline=4.0, shadow=3.0),
+    'score':  dict(WHITE, box=[0, 382, 574, 414], align='left', size=44, scale_x=0.92, outline=3.5, shadow=2.5),
+}
+SCORE_LABEL = 'SCORE: '
+REFERENCE_STATE = {'timer': '00:20', 'left': '15', 'score': '2,480'}
+
+
+def score_layout(k=1.0):
+    """x of the "SCORE:" label and of the live number, so that "SCORE: 2,480" is centred at 362."""
+    font = ImageFont.truetype(FONT, 400)
+    f = 44 / 400 * 0.92
+    full = SCORE_LABEL + REFERENCE_STATE['score']
+    bb_full = font.getbbox(full)
+    width = (bb_full[2] - bb_full[0]) * f
+    xl = 362 - width / 2
+    num_left = font.getlength(SCORE_LABEL) + font.getbbox(REFERENCE_STATE['score'])[0]
+    xn = xl + (num_left - bb_full[0]) * f
+    return round(xl, 1), round(xn, 1)
+
+
+def live(h, key, text):
+    sp = LIVE[key]
+    x = (sp['box'][0] + sp['box'][2]) / 2 if sp['align'] == 'center' else sp['box'][0]
+    h.text(text, x, sp['box'][1], sp['size'], align=sp['align'], fill_top=tuple(sp['fill_top']), fill_bot=tuple(sp['fill_bottom']),
+           outline=tuple(sp['outline_color']), ow=sp['outline'], shadow=sp['shadow'], scale_x=sp['scale_x'])
+
+
+def hud_static(h, portrait_path):
+    """Everything of the HUD that does not change during play (drawn into the background)."""
+    h.panel((250, 106, 474, 168), r=24, alpha=190)
+    h.text('LEVEL 8', 362, 118, 44, align='center', shadow=2.5)
+    h.panel((488, 102, 700, 172), r=30, alpha=220)
+    h.paste(stopwatch(60), (510, 112, 556, 158))
+    h.panel((26, 204, 698, 344), r=26, alpha=205)
+    if portrait_path:
+        h.paste(Image.open(portrait_path), (38, 196, 176, 334))
+    h.text('HIT THE GOLD ONES!', 184, 252, 42, shadow=2.5, fill_top=(255, 236, 140), fill_bot=(255, 178, 40), outline=(40, 16, 4), scale_x=0.9)
+    h.panel((150, 366, 574, 436), r=30, alpha=170)
+    xl, xn = score_layout()
+    h.text(SCORE_LABEL.strip(), xl, 382, 44, shadow=2.5)
+
+
+PAUSE = {'cx': 77, 'cy': 137, 'r': 43}
+BANNER_BOX = (104, 1318, 620, 1438)
+
+
+def pause_button(h):
     d = ImageDraw.Draw(h.layer)
-    cx, cy, r = 77, 137, 43
+    cx, cy, r = PAUSE['cx'], PAUSE['cy'], PAUSE['r']
     d.ellipse([h.f(cx - r), h.f(cy - r + 5), h.f(cx + r), h.f(cy + r + 5)], fill=(0, 0, 0, 90))
     d.ellipse([h.f(cx - r), h.f(cy - r), h.f(cx + r), h.f(cy + r)], fill=(*h.EDGE, 240))
     d.ellipse([h.f(cx - r + 4), h.f(cy - r + 4), h.f(cx + r - 4), h.f(cy + r - 4)], fill=(*h.RIM, 255))
     d.ellipse([h.f(cx - r + 8), h.f(cy - r + 8), h.f(cx + r - 8), h.f(cy + r - 8)], fill=(*h.NAVY, 235))
     for sx in (-1, 1):
         d.rounded_rectangle([h.f(cx + sx * 11 - 6), h.f(cy - 17), h.f(cx + sx * 11 + 6), h.f(cy + 17)], radius=h.f(3), fill=(255, 255, 255, 255))
-    h.panel((250, 106, 474, 168), r=24, alpha=190)
-    h.text('LEVEL 8', 362, 118, 44, align='center', shadow=2.5)
-    h.panel((488, 102, 700, 172), r=30, alpha=220)
-    h.paste(stopwatch(60), (510, 112, 556, 158))
-    h.text(state['timer'], 568, 120, 42, shadow=2.0, scale_x=0.86)
-    # instruction panel with the gold miner's portrait and the targets left
-    h.panel((26, 204, 698, 344), r=26, alpha=205)
-    if portrait_path:
-        h.paste(Image.open(portrait_path), (38, 196, 176, 334))
-    h.text('HIT THE GOLD ONES!', 184, 252, 42, shadow=2.5, fill_top=(255, 236, 140), fill_bot=(255, 178, 40), outline=(40, 16, 4), scale_x=0.9)
-    h.text(state['left'], 626, 238, 86, align='center', ow=4, shadow=3)
-    # score
-    h.panel((150, 366, 574, 436), r=30, alpha=170)
-    h.text('SCORE: ' + state['score'], 362, 382, 44, align='center', shadow=2.5)
+
+
+def banner(h):
+    x0, y0, x1, y1 = BANNER_BOX
+    h.rrect((x0, y0 + 7, x1, y1 + 7), 60, (0, 0, 0, 110))
+    h.rrect((x0, y0, x1, y1), 60, (70, 18, 6, 245))
+    h.rrect((x0 + 4, y0 + 4, x1 - 4, y1 - 4), 56, (255, 128, 32, 255))
+    h.rrect((x0 + 9, y0 + 9, x1 - 9, y1 - 9), 51, (38, 10, 20, 240))
+    h.paste(flame(96), (118, 1322, 214, 1418))
+    h.text('SPEED INCREASED!', 402, 1352, 50, align='center', fill_top=(255, 244, 150), fill_bot=(255, 150, 30), outline=(50, 12, 4),
+           ow=4, shadow=3, scale_x=0.9)
+
+
+def sprite_layer(size, k, draw):
+    """Draw one HUD element on a transparent full-size layer (scale k), return it cropped: (RGBA, (x, y) px)."""
+    h = Hud(Image.new('RGBA', size, (0, 0, 0, 0)), k)
+    draw(h)
+    img = h.done_rgba()
+    bb = img.getbbox()
+    x0, y0 = bb[0] - bb[0] % 2, bb[1] - bb[1] % 2
+    return img.crop((x0, y0, bb[2] + bb[2] % 2, bb[3] + bb[3] % 2)), (x0, y0)
+
+
+def scene_image(render_path):
+    rgba = np.asarray(Image.open(render_path).convert('RGBA')).astype(np.float32)
+    H, W = rgba.shape[:2]
+    a = rgba[..., 3:] / 255
+    return glow(rgba[..., :3] * a + sky.sky(W, H) * (1 - a), s=W / ART_W / 2), W / ART_W
+
+
+def gold_glow(img, gold_centres, k):
+    """The gold miners' halo (added to img) and their sparkles (an RGBA layer)."""
+    H, W = img.shape[:2]
+    halo = np.zeros((H, W), np.float32)
+    for (cx, cy, r) in gold_centres:
+        cv2.circle(halo, (int(cx * k), int(cy * k)), int(r * 0.95 * k), 1.0, -1, cv2.LINE_AA)
+    halo = cv2.GaussianBlur(halo, (0, 0), 26 * k / 2)
+    img = np.clip(img + halo[..., None] * np.array([255, 170, 40.0]) * 0.17, 0, 255)
+    sp = Image.new('RGBA', (W, H), (0, 0, 0, 0))
+    rnd = np.random.default_rng(5)
+    for (cx, cy, r) in gold_centres:
+        for i in range(5):
+            ang = rnd.uniform(0, 2 * np.pi); d = r * rnd.uniform(0.8, 1.25)
+            sparkle(sp, (cx + d * np.cos(ang)) * k, (cy - abs(d * np.sin(ang)) * 0.9) * k, rnd.uniform(8, 16) * k, rnd.uniform(0.7, 1.0))
+    return img, sp
+
+
+def compose(render_path, portrait_path, out_path, hud=True, gold_centres=(), state=None):
+    """The mockup (the approved one was made with this function)."""
+    state = state or dict(REFERENCE_STATE, banner=True)
+    img, k = scene_image(render_path)
+    img, sp = gold_glow(img, gold_centres, k)
+    base = Image.fromarray(np.clip(img, 0, 255).astype(np.uint8)).convert('RGBA')
+    base.alpha_composite(sp.filter(ImageFilter.GaussianBlur(3 * k))); base.alpha_composite(sp)
+    if not hud:
+        base.convert('RGB').save(out_path)
+        return
+    h = Hud(base, k)
+    pause_button(h)
+    hud_static(h, portrait_path)
+    live(h, 'timer', state['timer'])
+    live(h, 'target', state['left'])
+    xl, xn = score_layout()
+    LIVE['score']['box'][0] = xn
+    live(h, 'score', state['score'])
     if state.get('banner'):
-        x0, y0, x1, y1 = 104, 1318, 620, 1438
-        h.rrect((x0, y0 + 7, x1, y1 + 7), 60, (0, 0, 0, 110))
-        h.rrect((x0, y0, x1, y1), 60, (70, 18, 6, 245))
-        h.rrect((x0 + 4, y0 + 4, x1 - 4, y1 - 4), 56, (255, 128, 32, 255))
-        h.rrect((x0 + 9, y0 + 9, x1 - 9, y1 - 9), 51, (38, 10, 20, 240))
-        h.paste(flame(96), (118, 1322, 214, 1418))
-        h.text('SPEED INCREASED!', 402, 1352, 50, align='center', fill_top=(255, 244, 150), fill_bot=(255, 150, 30), outline=(50, 12, 4),
-               ow=4, shadow=3, scale_x=0.9)
+        banner(h)
     h.done().save(out_path)
 
 

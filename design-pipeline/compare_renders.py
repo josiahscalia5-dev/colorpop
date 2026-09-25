@@ -14,7 +14,8 @@ Regions compared (reference px):
   Level  scene       x 0-622,  y 66-960    (HUD .. holes; the foliage below moves to the screen bottom)
          + on the reference shape the full screen from y 66 down.
   Levels 3, 6, ...   the level's must-see rows (level.json "content"), full width, against
-         reference/screens/levelN.png, in the reference moment (LevelScreen.referenceMoment).
+         reference/screens/levelN.png (or level.json "reference": Level 8's approved new design),
+         in the reference moment (LevelScreen.referenceMoment).
 Rows above y 51/66 hold the reference photo's fake status bar and are not part of the game.
 """
 import json, os, sys
@@ -60,7 +61,9 @@ for fn in sorted(os.listdir(renders)):
         continue
     kind, device = fn[:-5].split('_', 1)
     if kind != 'level' and kind not in REF:
-        rp = os.path.join(ROOT, 'reference', 'screens', kind + '.png')
+        lvj = os.path.join(ROOT, 'app-assets', kind, 'level.json')
+        refname = json.load(open(lvj)).get('reference', kind) if os.path.exists(lvj) else kind
+        rp = os.path.join(ROOT, 'reference', 'screens', refname + '.png')
         if not os.path.exists(rp):
             continue
         REF[kind] = np.asarray(Image.open(rp).convert('RGB')).astype(np.float32)

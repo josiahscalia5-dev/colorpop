@@ -1,4 +1,8 @@
-"""Level 8 art: "HIT THE GOLD ONES!" (mining town at night, "SPEED INCREASED!").
+"""Level 8 art from the owner's sheet: "HIT THE GOLD ONES!" (mining town at night, "SPEED INCREASED!").
+
+SUPERSEDED: the app's Level 8 is now the new high-resolution design approved by the owner
+(design-pipeline/level8_3d/). This script is kept for reference; it writes to app-assets/level8_sheet/
+(not packaged in the app) so it can never overwrite the new Level 8.
 
 Reference: reference/screens/level8.png (724 x 1570 art px). Output: app-assets/level8/ + level.json.
 Same method as level6.py (see screen_art.py). The gold miners glow: each is a sprite (clipped at the
@@ -9,12 +13,13 @@ bottom left is out of focus in front of the scene (no hole): it stays in the bac
 """
 import os, sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import json
 import numpy as np, cv2
 from screen_art import *
 from paths import ROOT, work
 
 NAME = 'level8'
-OUT = os.path.join(ROOT, 'app-assets', NAME)
+OUT = os.path.join(ROOT, 'app-assets', 'level8_sheet')
 I = load_ref(NAME)
 H, W = I.shape[:2]
 Y, X = grid(I.shape)
@@ -323,7 +328,7 @@ def export(P, B):
     print(' calibrating lettering')
     level['live_text'] = calibrate_digits(I, scene, DIGITS)
     level['rules'] = RULES
-    write_level(NAME, level)
+    json.dump(level, open(os.path.join(OUT, 'level.json'), 'w'), indent=1)   # not app-assets/level8 (superseded)
     for key, d in DIGITS.items():
         scene = draw_text(scene, d['text'], level['live_text'][key])
     save_png(work('l8_rebuilt_reference.png'), scene)

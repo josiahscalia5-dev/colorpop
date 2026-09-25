@@ -31,6 +31,7 @@ def ray_to_ground(px, py):
 
 def reset(scale=1.0, samples=64):
     bpy.ops.wm.read_factory_settings(use_empty=True)
+    _SHARED.clear()
     sc = bpy.context.scene
     sc.render.engine = 'CYCLES'
     sc.cycles.device = 'CPU'

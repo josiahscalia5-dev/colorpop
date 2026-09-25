@@ -25,11 +25,16 @@ final class SpriteButton {
     private final RectF dst = new RectF();
 
     SpriteButton(Bitmap bitmap, float x, float y, float[] hit, boolean round, Xf xf) {
+        this(bitmap, x, y, hit, round, xf, 1);
+    }
+
+    /** density: bitmap px per art px (2 for a sprite drawn at twice the art resolution). */
+    SpriteButton(Bitmap bitmap, float x, float y, float[] hit, boolean round, Xf xf, float density) {
         this.bitmap = bitmap;
         this.x = x;
         this.y = y;
-        this.w = bitmap.getWidth();
-        this.h = bitmap.getHeight();
+        this.w = bitmap.getWidth() / density;
+        this.h = bitmap.getHeight() / density;
         hx0 = hit[0];
         hy0 = hit[1];
         hx1 = hit[2];
