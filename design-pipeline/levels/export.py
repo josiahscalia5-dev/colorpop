@@ -12,6 +12,24 @@ from paths import ROOT
 WHITE = {'fill_top': [255, 255, 255], 'fill_bottom': [236, 238, 244], 'outline_color': [6, 12, 28]}
 
 
+def clean_frame(B, left=4, right=8, top=6, bottom=0, radius=72, home_rows=26):
+    """The reference phones' bezel (a few px on each side), rounded screen corners and home
+    indicator, filled from the picture inside: the app shows the scene edge to edge (and mirrors it
+    beyond the bottom). The bottom `home_rows` (home indicator, bezel) mirror the rows above them."""
+    H, W = B.shape[:2]
+    B = B.copy()
+    k = np.arange(home_rows)
+    B[H - home_rows + k] = B[H - home_rows - 1 - k]
+    m = np.zeros((H, W), np.uint8)
+    x0, y0, x1, y1 = left, top, W - 1 - right, H - 1 - bottom
+    cv2.rectangle(m, (x0 + radius, y0), (x1 - radius, y1), 1, -1)
+    cv2.rectangle(m, (x0, y0 + radius), (x1, y1 - radius), 1, -1)
+    for cx, cy in ((x0 + radius, y0 + radius), (x1 - radius, y0 + radius), (x0 + radius, y1 - radius), (x1 - radius, y1 - radius)):
+        cv2.circle(m, (cx, cy), radius, 1, -1)
+    frame = (m == 0).astype(np.uint8) * 255
+    return cv2.inpaint(np.clip(B, 0, 255).astype(np.uint8), frame, 12, cv2.INPAINT_TELEA).astype(np.float64)
+
+
 def sprite_entry(out_dir, name, rgba, xy, rel):
     save_rgba(os.path.join(out_dir, name + '.png'), rgba)
     return {'file': f'{rel}/{name}.png', 'x': int(xy[0]), 'y': int(xy[1]), 'w': int(rgba.shape[1]), 'h': int(rgba.shape[0])}

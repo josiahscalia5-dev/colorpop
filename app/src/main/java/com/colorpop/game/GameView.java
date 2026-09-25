@@ -23,8 +23,12 @@ final class GameView extends View implements Choreographer.FrameCallback {
     final Prefs prefs;
     final Sfx sfx;
     final OutlineText text;
+    /** The levels, played in this order (the reference designs Levels 1, 3, 6, 8 and 10). */
+    static final int[] LEVELS = {1, 3, 6};
+
     final HomeScreen home;
-    final LevelScreen level;
+    final LevelScreen level;                   // Level 1
+    private final java.util.HashMap<Integer, LevelScreen> levels = new java.util.HashMap<>();
     /**
      * Screen edges the game must keep its controls away from, in px: display cutouts (camera
      * holes, notches, curved edges) and system bars while they are shown. In immersive mode the
@@ -46,7 +50,8 @@ final class GameView extends View implements Choreographer.FrameCallback {
         sfx = new Sfx(context, source, prefs);
         text = new OutlineText(art.font, art.json("level/level.json").optJSONObject("text_style"));
         home = new HomeScreen(this);
-        level = new LevelScreen(this);
+        level = new LevelScreen(this, 1, "level");
+        levels.put(1, level);
         screen = home;
         screen.onShow();
         black.setColor(0xff000000);
@@ -65,6 +70,43 @@ final class GameView extends View implements Choreographer.FrameCallback {
         return screen;
     }
 
+    /** The screen of level {@code id} (loaded the first time it is needed). */
+    LevelScreen levelScreen(int id) {
+        LevelScreen l = levels.get(id);
+        if (l == null) {
+            l = new LevelScreen(this, id, "level" + id);
+            levels.put(id, l);
+            if (getWidth() > 0 && getHeight() > 0) {
+                l.layout(getWidth(), getHeight());
+            }
+        }
+        return l;
+    }
+
+    /** The level after {@code id}, or 0 after the last one. */
+    int nextLevel(int id) {
+        for (int i = 0; i < LEVELS.length - 1; i++) {
+            if (LEVELS[i] == id) {
+                return LEVELS[i + 1];
+            }
+        }
+        return 0;
+    }
+
+    /** The level PLAY starts: the first one not won yet (the last one once all are). */
+    int playLevel() {
+        return LEVELS[Math.max(0, Math.min(LEVELS.length - 1, prefs.unlocked()))];
+    }
+
+    /** Level {@code id} was won: the next one is unlocked. */
+    void levelWon(int id) {
+        for (int i = 0; i < LEVELS.length; i++) {
+            if (LEVELS[i] == id && i + 1 > prefs.unlocked()) {
+                prefs.setUnlocked(Math.min(i + 1, LEVELS.length - 1));
+            }
+        }
+    }
+
     @Override
     protected void onSizeChanged(int w, int h, int oldw, int oldh) {
         relayout();
@@ -73,7 +115,9 @@ final class GameView extends View implements Choreographer.FrameCallback {
     private void relayout() {
         if (getWidth() > 0 && getHeight() > 0) {
             home.layout(getWidth(), getHeight());
-            level.layout(getWidth(), getHeight());
+            for (LevelScreen l : levels.values()) {
+                l.layout(getWidth(), getHeight());
+            }
         }
     }
 

@@ -1,15 +1,22 @@
 # Color Pop — Android game (work in progress)
 
-**Status: first playable build.** Home and Level 1 are implemented as an Android app (Java, no
-dependencies) and verified by rendering the real screens on 14 phone configurations and comparing
-them with the reference. Not yet done: a run on a real phone or emulator (see *Verification*).
-Do not start over — continue from here.
+**Status: playable build 0.2.** Home, Level 1, Level 3 and Level 6 are implemented as an Android app
+(Java, no dependencies) and verified by rendering the real screens on 14 phone configurations and
+comparing them with the reference. Do not start over — continue from here.
 
-Screens in scope for the first build (nothing else):
-1. Welcome / Home screen
-2. Level 1 gameplay ("HIT THE GREEN ONES!")
+Screens:
+1. Welcome / Home screen — done
+2. Level 1 ("HIT THE GREEN ONES!") — done
+3. Level 3 ("HIT THE PURPLE ONES!", combo, swipe hint) — done
+4. Level 6 ("HIT THE STARS!", combo, bombs) — done
+5. Level 8, Level 10, Level Complete, Worlds — art in progress (second reference sheet)
 
-The visual source of truth is `reference/color_pop_reference.png` (left phone = Home, right phone = Level 1).
+The levels are played in the order 1 → 3 → 6 (→ 8 → 10); winning one unlocks the next (saved), PLAY
+starts the first level not won yet, and the round-over panel offers NEXT LEVEL.
+
+The visual source of truth is `reference/color_pop_reference.png` (left phone = Home, right phone = Level 1)
+for Home and Level 1, and `reference/sheet/` (the owner's 8-screen sheet and its enlargements) for the
+other screens; `design-pipeline/screens_import.py` turns them into `reference/screens/<screen>.png`.
 The owner wants the screens to match the reference as exactly as technically possible — no redesign,
 no substitute art, no colour/layout changes.
 
@@ -69,16 +76,24 @@ The build copies the art from `app-assets/` (+ the font) into the APK (`syncArtA
   Home 0.9/255, 0.3 % (coin counter, + and gear pixel-identical); Level 1.9/255, 0.7 % — the same on
   every configuration. What remains is the live digits (Lilita One vs. the original lettering) and the
   faint glow the characters cast on the ground in the reference.
-- An APK was built and signed with the plain SDK tools (aapt2/dx/apksigner) as a packaging check.
-- **Not yet done:** running on an emulator or a real phone (sound, vibration, feel of the timing).
+- Levels 3 and 6: rendered on the same 14 configurations plus their reference shape in the reference
+  moment (`LevelScreen.referenceMoment`), compared inside the reference phone's bezel: Level 3
+  1.4–1.5/255, Level 6 1.8/255 on every configuration. Tests tap every character of the opening wave
+  (targets count with the combo multiplier, others don't, the Level 6 bomb costs 3 s), pause, time up,
+  and a bot plays Levels 1, 3 and 6 to the end (each win unlocks the next level).
+- An APK is built and signed with the plain SDK tools (aapt2/dx/apksigner).
 
 ## Code (`app/src/main/java/com/colorpop/game/`)
 - `MainActivity` — portrait, immersive, edge-to-edge (`layoutInDisplayCutoutMode` short edges).
 - `GameView` — frame loop, fade between screens, safe insets, touch routing.
 - `Fit` — the responsive layout rule and the background drawing (padding, mirror, soft side fill).
-- `HomeScreen` — sprites + controls: PLAY → Level 1; gear → Settings (sound / vibration toggles,
+- `HomeScreen` — sprites + controls: PLAY → the first level not won yet; gear → Settings (sound / vibration toggles,
   saved); + and the nav tabs → "COMING SOON!" until those screens exist; the coin counter is display only.
-- `LevelScreen` — Level 1: opening wave in the reference pose (so 00:28 looks like the reference), then
+- `LevelScreen` — every level, from its `level.json` (Level 1 keeps its own format and constants;
+  new levels carry `rules`: duration, goal, points, combo, swipe, bomb penalty, pop-up mix and pacing).
+  Characters have a role (target / distractor / bomb) and optionally an additive light layer (Level 6
+  stars); combo badge = word sprite + live "Nx"; Level 3 shows its swipe hint and hit flash in the
+  opening wave. Level 1: opening wave in the reference pose (so 00:28 looks like the reference), then
   random pop-ups (60 % green / 20 % red / 20 % yellow, faster over the round); tap green = pop burst,
   +10, one target less; red/yellow wobble and never count; 30 s; pause freezes everything; round over
   (time up or all 12 greens) → "PLAY AGAIN" / "HOME" (placeholder until the Level Complete screen is
@@ -113,8 +128,13 @@ calibrated lettering. `_lvl_geom.json` / `_lvl_masks.npz` are the reviewed sourc
   `icon.py` — launcher icons from the reference beaver; `compare_renders.py` — see above.
 - `fonts/LilitaOne-Regular.ttf` is SIL OFL (`OFL.txt`) and ships in the app.
 
-## Remaining work
-1. Run on an emulator / real phones; tune the pop-up pacing and the sound/vibration feel.
-2. Level Complete screen (design pending) to replace the placeholder round-over panel.
+`app-assets/level3/`, `app-assets/level6/` — made by `design-pipeline/levels/level3.py` / `level6.py`
+(shared tools: `screen_art.py`, `levels/export.py`): `bg.png` (empty holes rebuilt from a clean donor hole
+in ring coordinates, everything else by patch fill + Poisson merge; the reference phone's bezel, corners and
+home bar removed; 24 px blurred side padding), character sprites (difference mattes against the rebuilt
+background, so sprites over the background give back the reference), light layers, combo word, pause,
+`level.json`. Each script prints how far the rebuilt reference is from the reference.
 
-Not in scope yet: other levels, Worlds screen, coin economy.
+## Remaining work
+1. Levels 8 and 10, Level Complete and Worlds screens (second sheet), coins.
+2. Tune the pop-up pacing and the sound/vibration feel on real phones.

@@ -79,7 +79,7 @@ final class OutlineText {
 
     /** One of the HUD numbers of level.json ("live_text"), placed in its reference box. */
     static final class Slot {
-        final float left, top, right, size, scaleX, outline, shadow;
+        final float left, top, right, size, scaleX, outline, shadow, rotate;
         final int align;
 
         Slot(JSONObject spec) {
@@ -91,12 +91,21 @@ final class OutlineText {
             scaleX = (float) spec.optDouble("scale_x", 1);
             outline = (float) spec.optDouble("outline");
             shadow = (float) spec.optDouble("shadow");
+            rotate = (float) spec.optDouble("rotate", 0);
             align = "center".equals(spec.optString("align")) ? CENTER : LEFT;
         }
 
         void draw(Canvas c, OutlineText t, String text, Xf xf) {
             float x = align == CENTER ? xf.x((left + right) / 2) : xf.x(left);
+            if (rotate == 0) {
+                t.draw(c, text, x, xf.y(top), align, size * xf.s, scaleX, outline * xf.s, shadow * xf.s, 255);
+                return;
+            }
+            // tilted around the middle of the lettering (degrees, clockwise positive)
+            int save = c.save();
+            c.rotate(rotate, xf.x((left + right) / 2), xf.y(top) + t.digitHeight(size * xf.s) / 2);
             t.draw(c, text, x, xf.y(top), align, size * xf.s, scaleX, outline * xf.s, shadow * xf.s, 255);
+            c.restoreToCount(save);
         }
     }
 }

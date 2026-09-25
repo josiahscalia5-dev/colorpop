@@ -235,6 +235,8 @@ def export(masks, edges, openings, B, parts):
     from levels.export import sprite_entry, calibrate_digits, write_level
     rel = NAME
     level = {'id': 3, 'art': {'w': W, 'h': H}, 'content': {'top': 92, 'bottom': 1380}}
+    from levels.export import clean_frame
+    B = clean_frame(B)
     # background, with 24 px of blurred reflection each side (only seen on wide screens)
     PAD = 24
     full = cv2.copyMakeBorder(B.astype(np.float32), 0, 0, PAD, PAD, cv2.BORDER_REFLECT_101)
@@ -297,7 +299,8 @@ def export(masks, edges, openings, B, parts):
     scene = draw_text(scene, '3x', level['combo']['number'])
     save_png(work('l3_rebuilt_reference.png'), scene)
     d = np.abs(scene - I).mean(-1)
-    print(' rebuilt reference vs reference: mean diff %.2f/255, %.2f%% px off by >40' % (d[92:1380].mean(), (d[92:1380] > 40).mean() * 100))
+    d = d[92:1380, 4:W - 8]          # inside the reference phone's bezel
+    print(' rebuilt reference vs reference: mean diff %.2f/255, %.2f%% px off by >40' % (d.mean(), (d > 40).mean() * 100))
 
 
 if __name__ == '__main__':

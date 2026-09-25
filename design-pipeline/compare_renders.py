@@ -13,6 +13,8 @@ Regions compared (reference px):
                      screen, so the sky behind them legitimately differs on taller screens)
   Level  scene       x 0-622,  y 66-960    (HUD .. holes; the foliage below moves to the screen bottom)
          + on the reference shape the full screen from y 66 down.
+  Levels 3, 6, ...   the level's must-see rows (level.json "content"), full width, against
+         reference/screens/levelN.png, in the reference moment (LevelScreen.referenceMoment).
 Rows above y 51/66 hold the reference photo's fake status bar and are not part of the game.
 """
 import json, os, sys
@@ -54,9 +56,14 @@ def sprite_mask(s, ox, oy, w, h):
 rows = []
 sheets = {}
 for fn in sorted(os.listdir(renders)):
-    if not fn.endswith('.json') or not (fn.startswith('home_') or fn.startswith('level_')):
+    if not fn.endswith('.json') or not (fn.startswith('home_') or fn.startswith('level')):
         continue
     kind, device = fn[:-5].split('_', 1)
+    if kind != 'level' and kind not in REF:
+        rp = os.path.join(ROOT, 'reference', 'screens', kind + '.png')
+        if not os.path.exists(rp):
+            continue
+        REF[kind] = np.asarray(Image.open(rp).convert('RGB')).astype(np.float32)
     L = json.load(open(os.path.join(renders, fn)))
     img = np.asarray(Image.open(os.path.join(renders, fn[:-5] + '.png')).convert('RGB')).astype(np.float32)
     w, h, s_ = L['w'], L['h'], L['s']
@@ -64,6 +71,11 @@ for fn in sorted(os.listdir(renders)):
     if kind == 'home':
         parts.append(('main', L['oy'], box_mask(s_, L['ox'], L['oy'], w, h, 0, 160, 628, 1150)))
         parts.append(('top', L['top_oy'], sprite_mask(s_, L['ox'], L['top_oy'], w, h)))
+    elif kind != 'level':
+        lv = json.load(open(os.path.join(ROOT, 'app-assets', kind, 'level.json')))
+        c = lv['content']
+        # inside the reference phone's bezel (the app shows the scene edge to edge instead)
+        parts.append(('scene', L['oy'], box_mask(s_, L['ox'], L['oy'], w, h, 4, c['top'], lv['art']['w'] - 8, c['bottom'])))
     else:
         parts.append(('scene', L['oy'], box_mask(s_, L['ox'], L['oy'], w, h, 0, 66, 622, 960)))
         if device == 'reference_level':
@@ -73,7 +85,7 @@ for fn in sorted(os.listdir(renders)):
         d = np.abs(img - expect).mean(-1)
         m, bad = float(d[mask].mean()), float((d[mask] > 40).mean() * 100)
         rows.append((kind, device, name, w, h, s_, m, bad))
-        if device in ('reference_home', 'reference_level') and name in ('main', 'full'):
+        if (device in ('reference_home', 'reference_level') and name in ('main', 'full')) or (kind != 'level' and device == 'reference'):
             ys, xs = np.where(mask)
             sl = (slice(ys.min(), ys.max() + 1), slice(xs.min(), xs.max() + 1))
             heat = cv2.applyColorMap(np.clip(d[sl] * 4, 0, 255).astype(np.uint8), cv2.COLORMAP_INFERNO)[..., ::-1]

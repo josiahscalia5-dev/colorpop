@@ -298,6 +298,8 @@ def export(P, B):
     masks, edges, openings = P['masks'], P['edges'], P['openings']
     rel = NAME
     level = {'id': 6, 'art': {'w': W, 'h': H}, 'content': {'top': 92, 'bottom': 1432}}
+    from levels.export import clean_frame
+    B = clean_frame(B)
     PAD = 24
     full = cv2.copyMakeBorder(B.astype(np.float32), 0, 0, PAD, PAD, cv2.BORDER_REFLECT_101)
     soft = cv2.GaussianBlur(full, (0, 0), 6)
@@ -354,7 +356,8 @@ def export(P, B):
     scene = draw_text(scene, COMBO_NUMBER['text'], level['combo']['number'])
     save_png(work('l6_rebuilt_reference.png'), scene)
     d = np.abs(scene - I).mean(-1)
-    print(' rebuilt reference vs reference: mean diff %.2f/255, %.2f%% px off by >40' % (d[92:1432].mean(), (d[92:1432] > 40).mean() * 100))
+    d = d[92:1432, 4:W - 8]          # inside the reference phone's bezel
+    print(' rebuilt reference vs reference: mean diff %.2f/255, %.2f%% px off by >40' % (d.mean(), (d > 40).mean() * 100))
 
 
 if __name__ == '__main__' and '--preview' not in sys.argv:

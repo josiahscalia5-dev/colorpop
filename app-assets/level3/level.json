@@ -1505,9 +1505,9 @@
   },
   "purple2": {
    "file": "level3/char_purple2.png",
-   "x": 265,
+   "x": 266,
    "y": 862,
-   "w": 136,
+   "w": 135,
    "h": 212,
    "hole": "h4",
    "color": "purple",

@@ -1392,9 +1392,9 @@
   "masked": {
    "file": "level6/char_masked.png",
    "x": 402,
-   "y": 990,
-   "w": 255,
-   "h": 299,
+   "y": 989,
+   "w": 254,
+   "h": 300,
    "hole": "hF",
    "color": "red",
    "role": "bomb"

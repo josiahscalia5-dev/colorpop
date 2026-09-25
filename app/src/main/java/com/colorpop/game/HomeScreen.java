@@ -151,7 +151,7 @@ final class HomeScreen extends Screen {
     private void activate(SpriteButton b) {
         game.sfx.click();
         if (b == play) {
-            game.show(game.level);
+            game.show(game.levelScreen(game.playLevel()));
         } else if (b == gear) {
             openSettings();
         } else {

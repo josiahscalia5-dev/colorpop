@@ -3,7 +3,7 @@ package com.colorpop.game;
 import android.graphics.Canvas;
 import android.view.MotionEvent;
 
-/** One full-screen state of the game (Home, Level 1). */
+/** One full-screen state of the game (Home, a level). */
 abstract class Screen {
     final GameView game;
     int w, h;
