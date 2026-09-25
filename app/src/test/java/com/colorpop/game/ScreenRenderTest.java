@@ -379,10 +379,21 @@ public class ScreenRenderTest {
                 run(v, 1.0f);              // the opening wave is up: every reference character
                 Xf xf = l.xf();
                 int targets = 0, others = 0, bombs = 0, combo = 0, expected = 0;
+                java.util.List<LevelScreen.Mole> order = new java.util.ArrayList<>();
                 for (LevelScreen.Hole hole : l.holes()) {
-                    LevelScreen.Mole m = hole.mole;
-                    if (!m.visible()) {
-                        continue;          // an empty hole
+                    if (hole.mole.visible() && hole.mole.look.role == LevelScreen.TARGET) {
+                        order.add(hole.mole);
+                    }
+                }
+                for (LevelScreen.Hole hole : l.holes()) {
+                    if (hole.mole.visible() && hole.mole.look.role != LevelScreen.TARGET) {
+                        order.add(hole.mole);
+                    }
+                }
+                for (LevelScreen.Mole m : order) {
+                    if (l.decoyFails() && others > 0) {
+                        others++;          // the round already failed on the first decoy
+                        continue;
                     }
                     float[] a = aim(m);
                     int left = l.targetsLeft();
@@ -397,10 +408,29 @@ public class ScreenRenderTest {
                         others++;
                         combo = 0;
                         assertEquals(d.name + " L" + id + " no target", left, l.targetsLeft());
+                        if (l.decoyFails()) {
+                            // Level 8: a decoy fails the round at once; it starts again a moment later
+                            assertTrue(d.name + " L" + id + " decoy fails the round", l.isFailing());
+                            assertEquals(1, l.failures());
+                            if (d == DEVICES[8]) {
+                                run(v, 0.4f);
+                                render(v, "state_level" + id + "_wrong_miner");
+                            }
+                            run(v, 2.0f);
+                            assertFalse(d.name + " L" + id + " restarted", l.isFailing());
+                            assertEquals(d.name + " L" + id + " restarted: all targets back", l.goal(), l.targetsLeft());
+                            assertEquals(d.name + " L" + id + " restarted: score 0", 0, l.score());
+                            assertTrue(d.name + " L" + id + " restarted: timer from the start", l.elapsed() < 2.1f);
+                            expected = 0;
+                            continue;
+                        }
                         if (m.look.role == LevelScreen.BOMB) {
                             bombs++;
                             assertEquals(d.name + " L" + id + " bomb costs time", t + l.bombPenalty(), l.elapsed(), 1e-3f);
                         }
+                    }
+                    if (l.decoyFails() && others > 0) {
+                        continue;
                     }
                     assertEquals(d.name + " L" + id + " score", expected, l.score());
                     assertEquals(d.name + " L" + id + " combo", l.combos() ? combo : 0, l.combo());
@@ -554,6 +584,14 @@ public class ScreenRenderTest {
      * a decoy by mistake. Returns {won, seconds left}.
      */
     private static float[] playLikeAHuman(GameView v, LevelScreen l, long seed) {
+        return playLikeAHuman(v, l, seed, false);
+    }
+
+    /**
+     * careful: where a decoy fails the round, a player looks twice -- 0.05 s longer to react and
+     * one decoy in 50 tapped by mistake instead of one in 12.
+     */
+    private static float[] playLikeAHuman(GameView v, LevelScreen l, long seed, boolean careful) {
         java.util.Random r = new java.util.Random(seed);
         java.util.Map<LevelScreen.Mole, Float> seen = new java.util.HashMap<>();
         java.util.Map<LevelScreen.Mole, Boolean> decided = new java.util.HashMap<>();
@@ -568,8 +606,8 @@ public class ScreenRenderTest {
                     continue;
                 }
                 if (!seen.containsKey(m)) {
-                    seen.put(m, now + 0.45f + 0.4f * r.nextFloat());
-                    decided.put(m, m.look.role == LevelScreen.TARGET || r.nextFloat() < 0.08f);
+                    seen.put(m, now + 0.45f + 0.4f * r.nextFloat() + (careful ? 0.05f : 0));
+                    decided.put(m, m.look.role == LevelScreen.TARGET || r.nextFloat() < (careful ? 0.02f : 0.08f));
                 }
                 if (decided.get(m) && now >= seen.get(m) && now - lastTap >= 0.25f) {
                     float[] a = aim(m);
@@ -581,30 +619,47 @@ public class ScreenRenderTest {
             }
             v.step(FRAME);
             now += FRAME;
+            if (l.failures() > 0) {
+                return new float[]{0, 0};     // tapped a decoy: the round is lost
+            }
         }
         return new float[]{l.isWon() ? 1 : 0, l.duration() - l.elapsed()};
     }
 
+    /** {win rate, average seconds left, rounds lost on a decoy, average targets hit} over `runs` rounds. */
+    private float[] measure(int id, int runs, boolean careful) {
+        float wins = 0, left = 0, decoy = 0, hit = 0;
+        for (int seed = 0; seed < runs; seed++) {
+            GameView v = view(DEVICES[8]);
+            LevelScreen l = openLevel(v, id);
+            l.seed(100 + seed);
+            float[] res = playLikeAHuman(v, l, 1000 + seed, careful);
+            wins += res[0];
+            left += res[1];
+            decoy += l.failures() > 0 ? 1 : 0;
+            hit += l.goal() - l.targetsLeft();
+        }
+        return new float[]{wins / runs, left / runs, decoy, hit / runs};
+    }
+
     @Test
     public void difficultyRisesGraduallyAndStaysFair() {
-        int[] ids = {1, 3, 6, 8};
+        int[] ids = {1, 3, 6};
         float[] rate = new float[ids.length], spare = new float[ids.length];
-        int runs = 12;
         StringBuilder report = new StringBuilder();
         for (int k = 0; k < ids.length; k++) {
-            float wins = 0, left = 0;
-            for (int seed = 0; seed < runs; seed++) {
-                GameView v = view(DEVICES[8]);
-                LevelScreen l = openLevel(v, ids[k]);
-                l.seed(100 + seed);
-                float[] res = playLikeAHuman(v, l, 1000 + seed);
-                wins += res[0];
-                left += res[1];
-            }
-            rate[k] = wins / runs;
-            spare[k] = left / runs;
-            report.append(String.format(Locale.US, "Level %d: won %.0f%%, %.1f s left on average%n", ids[k], rate[k] * 100, left / runs));
+            float[] r = measure(ids[k], 12, false);
+            rate[k] = r[0];
+            spare[k] = r[1];
+            report.append(String.format(Locale.US, "Level %d: won %.0f%%, %.1f s left on average%n", ids[k], rate[k] * 100, spare[k]));
         }
+        // Level 8: a decoy fails the round, so a player looks twice before tapping (careful);
+        // the casual player's result is shown for comparison
+        float[] l8 = measure(8, 24, true), l8casual = measure(8, 24, false);
+        report.append(String.format(Locale.US, "Level 8 (careful player): won %.0f%%, %.1f s left on average; lost on a decoy %.0f of 24, gold hit %.1f of 28 on average%n",
+                l8[0] * 100, l8[1], l8[2], l8[3]));
+        report.append(String.format(Locale.US, "Level 8 (casual player, 1 decoy in 12 tapped): won %.0f%%; lost on a decoy %.0f of 24, gold hit %.1f%n",
+                l8casual[0] * 100, l8casual[2], l8casual[3]));
         System.out.print(report);
         try {
             writeLayout("difficulty", report.toString());
@@ -618,5 +673,45 @@ public class ScreenRenderTest {
             assertTrue("Level " + ids[k] + " harder than Level " + ids[k - 1] + ": " + report, spare[k] < spare[k - 1]);
             assertTrue(rate[k] <= rate[k - 1] + 1e-3f);
         }
+        // Level 8: clearly harder than Level 6, but a careful player still wins it
+        assertTrue("Level 8 harder than Level 6: " + report, l8[0] < rate[2]);
+        assertTrue("Level 8 winnable by a careful player: " + report, l8[0] >= 0.3f);
+        assertTrue("carelessness is punished on Level 8: " + report, l8casual[0] < l8[0]);
+    }
+
+    @Test
+    public void level8CharactersChangeHolesAndGetFaster() {
+        GameView v = view(DEVICES[8]);
+        LevelScreen l = openLevel(v, 8);
+        l.seed(3);
+        // watch a whole round without tapping: how long each appearance stays up, early and late
+        java.util.Map<LevelScreen.Mole, Float> since = new java.util.HashMap<>();
+        float early = 0, late = 0;
+        int nEarly = 0, nLate = 0;
+        float now = 0;
+        for (int f = 0; f < 60 * 41 && !l.isOver(); f++) {
+            for (LevelScreen.Hole hole : l.holes()) {
+                LevelScreen.Mole m = hole.mole;
+                boolean up = m.state == LevelScreen.Mole.UP;
+                if (up && !since.containsKey(m)) {
+                    since.put(m, now);
+                } else if (!up && since.containsKey(m)) {
+                    float d = now - since.remove(m);
+                    if (now > 4 && now < 14) {
+                        early += d;
+                        nEarly++;
+                    } else if (now > 28) {
+                        late += d;
+                        nLate++;
+                    }
+                }
+            }
+            v.step(FRAME);
+            now += FRAME;
+        }
+        assertTrue("characters change holes: " + l.hops(), l.hops() >= 3);
+        assertTrue("they stay up less and less: early " + early / nEarly + " s, late " + late / nLate + " s",
+                late / nLate < 0.8f * (early / nEarly));
+        assertEquals("no tap, no failure", 0, l.failures());
     }
 }

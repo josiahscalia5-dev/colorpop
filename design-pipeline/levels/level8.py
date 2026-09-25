@@ -275,6 +275,8 @@ RULES = {'duration': 40, 'goal': 28, 'target': 'gold', 'combo': False, 'points':
          'mix': {'target': 0.5, 'distractor': 0.5}, 'hold': [0.9, 1.2], 'gap': [0.38, 0.62], 'up_max': [2, 3],
          'quick': 0.25,
          'speedup': {'at': 20.0, 'hold': 0.8, 'gap': 0.78, 'up': 1},
+         'decoy_fails': True, 'hop': {'chance': [0.08, 0.3], 'after': [0.65, 0.95]},
+         'ramp': {'hold': 0.95, 'gap': 0.85, 'rise': 0.75},
          'reference_state': {'elapsed': 20.0, 'targets_left': 15, 'score': 2480, 'combo': 0}}
 
 

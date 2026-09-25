@@ -1923,6 +1923,22 @@
    "targets_left": 15,
    "score": 2480,
    "combo": 0
+  },
+  "decoy_fails": true,
+  "hop": {
+   "chance": [
+    0.08,
+    0.3
+   ],
+   "after": [
+    0.65,
+    0.95
+   ]
+  },
+  "ramp": {
+   "hold": 0.95,
+   "gap": 0.85,
+   "rise": 0.75
   }
  }
 }

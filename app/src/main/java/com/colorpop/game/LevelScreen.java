@@ -40,6 +40,7 @@ final class LevelScreen extends Screen {
     static final int TARGETS = 12, POINTS = 10;      // Level 1
     static final int TARGET = 0, DISTRACTOR = 1, BOMB = 2;
     private static final float RISE = 0.22f, SINK = 0.2f, POP = 0.2f, WOBBLE = 0.45f, MAX_ENLARGE = 1.3f;
+    private static final float HOP_SINK = 0.12f, HOP_RISE = 0.16f, FAIL_TIME = 1.6f;
     private static final float INTRO_HOLD_UNTIL = 2.95f, SPAWN_FROM = 3.3f;
     private static final float INTRO_FX_FADE = 2.4f, INTRO_FX_GONE = 3.0f, BURST_TIME = 0.32f, BANNER_TIME = 2.8f;
     private static final int PAUSE_RESUME = 1, PAUSE_HOME = 2, OVER_AGAIN = 3, OVER_HOME = 4, OVER_NEXT = 5;
@@ -58,6 +59,9 @@ final class LevelScreen extends Screen {
     private final float quick;                        // share of quick pop-ups (0.6 x the hold)
     private final float speedAt, speedHold, speedGap; // "SPEED INCREASED!" (speedAt < 0: never)
     private final int speedUp;
+    private final boolean decoyFails;                 // tapping a decoy fails the round (it restarts)
+    private final float hopChance0, hopChance1, hopAfterMin, hopAfterSpread;   // characters changing holes
+    private final float rampHold, rampGap, rampRise;  // steady speed-up: factors reached at the end
     private final JSONObject referenceState;
 
     // ------------------------------------------------------------------ art
@@ -84,7 +88,9 @@ final class LevelScreen extends Screen {
     private float bannerT = -1;                       // time since the banner appeared (< 0: hidden)
     private boolean fast;                             // sped up
     private int score, targetsLeft, combo, maxCombo;
-    private boolean paused, over, won;
+    private boolean paused, over, won, failing;
+    private float failT;
+    private int failures, hops;
     private Ui.Dialog dialog;
     private boolean pausePressed, swiping;
     private final List<Particle> particles = new ArrayList<>();
@@ -232,6 +238,8 @@ final class LevelScreen extends Screen {
         final Hole hole;
         int state = HIDDEN;
         float t, delay, hold, cooldown;
+        float rise = RISE, sinkTime = SINK;   // this appearance's timing
+        float hopAt = -1;                     // seconds up after which it moves to another hole (< 0: never)
         Look look;
 
         Mole(Hole hole) {
@@ -243,6 +251,9 @@ final class LevelScreen extends Screen {
             delay = wait;
             hold = holdTime;
             t = 0;
+            rise = RISE;
+            sinkTime = SINK;
+            hopAt = -1;
             state = wait > 0 ? WAIT : RISING;
         }
 
@@ -250,7 +261,7 @@ final class LevelScreen extends Screen {
             if (state == RISING || state == UP || state == REACT) {
                 float p = pose();
                 state = SINKING;
-                t = SINK * (float) Math.sqrt(1 - Math.max(0, Math.min(1, p)));  // continue from the current height
+                t = sinkTime * (float) Math.sqrt(1 - Math.max(0, Math.min(1, p)));  // continue from the current height
             } else if (state == WAIT) {
                 state = HIDDEN;
             }
@@ -266,12 +277,15 @@ final class LevelScreen extends Screen {
                     }
                     break;
                 case RISING:
-                    if (t >= RISE) {
+                    if (t >= rise) {
                         state = UP;
                         t = 0;
                     }
                     break;
                 case UP:
+                    if (hopAt >= 0 && t >= hopAt && t < hold && hop(this)) {
+                        break;                        // ducked: it pops up in another hole
+                    }
                     if (t >= hold) {
                         state = SINKING;
                         t = 0;
@@ -285,7 +299,7 @@ final class LevelScreen extends Screen {
                     }
                     break;
                 case SINKING:
-                    if (t >= SINK) {
+                    if (t >= sinkTime) {
                         state = HIDDEN;
                         cooldown = 0.35f;
                     }
@@ -306,7 +320,7 @@ final class LevelScreen extends Screen {
         float pose() {
             switch (state) {
                 case RISING: {
-                    float u = Math.min(1, t / RISE), c = 1.3f, v = u - 1;
+                    float u = Math.min(1, t / rise), c = 1.3f, v = u - 1;
                     return 1 + (c + 1) * v * v * v + c * v * v;
                 }
                 case UP:
@@ -314,7 +328,7 @@ final class LevelScreen extends Screen {
                 case REACT:
                     return 1;
                 case SINKING: {
-                    float u = Math.min(1, t / SINK);
+                    float u = Math.min(1, t / sinkTime);
                     return 1 - u * u;
                 }
                 default:
@@ -327,7 +341,7 @@ final class LevelScreen extends Screen {
         }
 
         boolean tappable() {
-            return (state == RISING && t > RISE * 0.3f) || state == UP;
+            return (state == RISING && t > rise * 0.3f) || state == UP;
         }
 
         float scale() {
@@ -495,6 +509,18 @@ final class LevelScreen extends Screen {
         speedHold = sp == null ? 1 : (float) sp.optDouble("hold", 1);
         speedGap = sp == null ? 1 : (float) sp.optDouble("gap", 1);
         speedUp = sp == null ? 0 : sp.optInt("up", 0);
+        decoyFails = !legacy && rules.optBoolean("decoy_fails", false);
+        JSONObject hop = legacy ? null : rules.optJSONObject("hop");
+        JSONArray hc = hop == null ? null : hop.optJSONArray("chance");
+        JSONArray ha = hop == null ? null : hop.optJSONArray("after");
+        hopChance0 = hc == null ? 0 : (float) hc.optDouble(0);
+        hopChance1 = hc == null ? 0 : (float) hc.optDouble(1);
+        hopAfterMin = ha == null ? 0.4f : (float) ha.optDouble(0);
+        hopAfterSpread = ha == null ? 0.2f : (float) (ha.optDouble(1) - ha.optDouble(0));
+        JSONObject ramp = legacy ? null : rules.optJSONObject("ramp");
+        rampHold = ramp == null ? 1 : (float) ramp.optDouble("hold", 1);
+        rampGap = ramp == null ? 1 : (float) ramp.optDouble("gap", 1);
+        rampRise = ramp == null ? 1 : (float) ramp.optDouble("rise", 1);
         referenceState = legacy ? null : rules.optJSONObject("reference_state");
 
         JSONObject hs = L.optJSONObject("holes");
@@ -649,6 +675,8 @@ final class LevelScreen extends Screen {
         floaters.clear();
         bursts.clear();
         targetPulse = scorePulse = timerPulse = comboPulse = 0;
+        failing = false;
+        failT = 0;
         bannerT = -1;
         fast = false;
         nextSpawn = 0;
@@ -664,7 +692,7 @@ final class LevelScreen extends Screen {
     }
 
     private void pauseGame() {
-        if (!paused && !over) {
+        if (!paused && !over && !failing) {
             paused = true;
             dialog = new Ui.Dialog("PAUSED").button(PAUSE_RESUME, "RESUME", true).button(PAUSE_HOME, "HOME", false);
             dialog.layout(w, h, xf.s, game.safe);
@@ -699,7 +727,13 @@ final class LevelScreen extends Screen {
             return;
         }
         sinceStart += dt;
-        if (over) {
+        if (failing) {
+            failT += dt;                              // "WRONG MINER!", then the level starts again
+            if (failT >= FAIL_TIME) {
+                startRound();
+                return;
+            }
+        } else if (over) {
             overT += dt;
             if (dialog == null && overT > 0.7f) {
                 dialog = new Ui.Dialog(won ? "LEVEL COMPLETE!" : "TIME'S UP!");
@@ -802,12 +836,20 @@ final class LevelScreen extends Screen {
                 }
                 look = pick(byRole.get(role), hole);
             }
-            float hold = (holdMin + holdSpread * rnd.nextFloat()) * (1 - 0.3f * progress) * (fast ? speedHold : 1);
+            float hold = (holdMin + holdSpread * rnd.nextFloat()) * (1 - 0.3f * progress) * (fast ? speedHold : 1)
+                    * lerp(1, rampHold, progress);
             if (quick > 0 && rnd.nextFloat() < quick) {
                 hold *= 0.6f;                         // a quick one: less time to react
             }
-            hole.mole.spawn(look, 0, hold);
-            nextSpawn = (gapMin + gapSpread * rnd.nextFloat()) * (1 - 0.25f * progress) * (fast ? speedGap : 1);
+            Mole m = hole.mole;
+            m.spawn(look, 0, hold);
+            m.rise = RISE * lerp(1, rampRise, progress);
+            // (only levels with hops draw this number: the others keep their exact pop-up sequence)
+            if (hopChance1 > 0 && rnd.nextFloat() < lerp(hopChance0, hopChance1, progress)) {
+                m.hopAt = Math.min(hold * 0.7f, hopAfterMin + hopAfterSpread * rnd.nextFloat());
+            }
+            nextSpawn = (gapMin + gapSpread * rnd.nextFloat()) * (1 - 0.25f * progress) * (fast ? speedGap : 1)
+                    * lerp(1, rampGap, progress);
         } else {
             nextSpawn = 0.1f;
         }
@@ -839,6 +881,55 @@ final class LevelScreen extends Screen {
         return fit.isEmpty() ? largest : fit.get(rnd.nextInt(fit.size()));
     }
 
+    private static float lerp(float a, float b, float u) {
+        return a + (b - a) * u;
+    }
+
+    /**
+     * A character ducks and pops up in another free hole a moment later (the rest of its time up
+     * there). Returns false (it stays) if no hole is free.
+     */
+    private boolean hop(Mole m) {
+        List<Hole> free = new ArrayList<>();
+        for (Hole hole : holes) {
+            if (hole != m.hole && hole.mole.state == Mole.HIDDEN && hole.mole.cooldown <= 0) {
+                free.add(hole);
+            }
+        }
+        if (free.isEmpty() || over || failing) {
+            m.hopAt = -1;
+            return false;
+        }
+        Hole to = free.get(rnd.nextInt(free.size()));
+        float left = Math.max(0.45f, m.hold - m.t);
+        m.state = Mole.SINKING;
+        m.sinkTime = HOP_SINK;
+        m.t = 0;
+        to.mole.spawn(m.look, HOP_SINK + 0.05f, left);
+        to.mole.rise = HOP_RISE;
+        hops++;
+        return true;
+    }
+
+    /** A decoy was tapped where decoys fail the round: it starts again (after a moment). */
+    private void fail(Mole m) {
+        failing = true;
+        failT = 0;
+        failures++;
+        m.state = Mole.REACT;
+        m.t = 0;
+        for (Hole hole : holes) {
+            if (hole.mole != m) {
+                hole.mole.sink();
+            }
+        }
+        game.sfx.bonk();
+        game.sfx.buzz(140);
+        dialog = new Ui.Dialog("WRONG MINER!");
+        dialog.line = "ONLY TAP THE GOLD ONES!";
+        dialog.layout(w, h, xf.s, game.safe);
+    }
+
     /** A target went back into its hole without being hit: the combo is broken. */
     private void escaped(Mole m) {
         if (m.look.role == TARGET && !over) {
@@ -848,7 +939,7 @@ final class LevelScreen extends Screen {
 
     /** A tap (or, where the level allows it, a swipe) at screen point (x, y) during play. */
     void tap(float x, float y) {
-        if (paused || over) {
+        if (paused || over || failing) {
             return;
         }
         float ax = xf.artX(x), ay = xf.artY(y);
@@ -881,6 +972,8 @@ final class LevelScreen extends Screen {
                 if (targetsLeft == 0) {
                     finish(true);
                 }
+            } else if (decoyFails && m.look.role == DISTRACTOR) {
+                fail(m);
             } else {
                 m.state = Mole.REACT;
                 m.t = 0;
@@ -989,6 +1082,9 @@ final class LevelScreen extends Screen {
 
     @Override
     boolean back() {
+        if (failing) {
+            return true;
+        }
         if (over) {
             if (dialog != null) {
                 game.show(game.home);
@@ -1202,6 +1298,22 @@ final class LevelScreen extends Screen {
 
     boolean spedUp() {
         return fast;
+    }
+
+    boolean isFailing() {
+        return failing;
+    }
+
+    int failures() {
+        return failures;
+    }
+
+    int hops() {
+        return hops;
+    }
+
+    boolean decoyFails() {
+        return decoyFails;
     }
 
     boolean bannerShowing() {

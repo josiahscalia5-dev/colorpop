@@ -1,6 +1,6 @@
 # Color Pop — Android game (work in progress)
 
-**Status: playable test build 0.6 (before Level 10): Level 8 in its new, owner-approved design.** Home and Levels 1, 3, 6 and 8 are implemented as an Android app
+**Status: playable test build 0.7 (before Level 10): Level 8 in its new, owner-approved design, with its harder rules.** Home and Levels 1, 3, 6 and 8 are implemented as an Android app
 (Java, no dependencies) and verified by rendering the real screens on 14 phone configurations and
 comparing them with the reference. Do not start over — continue from here.
 
@@ -24,11 +24,15 @@ Difficulty rises gradually through the rules only (the screens are the reference
 | 1 | 30 s | 12 | tap the greens (red and yellow don't count) |
 | 3 | 30 s | 12 | combo multiplier, swipe to slice, two kinds of decoys |
 | 6 | 30 s | 15 | bombs cost 3 s; faster pop-ups |
-| 8 | 40 s | 28 | 8 holes, look-alike decoys, quick pops; at 00:20 SPEED INCREASED! (faster, shorter, one more up) |
+| 8 | 40 s | 28 | only gold miners count: tapping a decoy (yellow or brown) fails the round, "WRONG MINER!", and Level 8 starts again; characters change holes while up (more often later); pop-ups get steadily faster; quick pops; at 00:20 SPEED INCREASED! (faster, shorter, one more up) |
 
 `ScreenRenderTest.difficultyRisesGraduallyAndStaysFair` plays every level with a simulated human
-(0.45–0.85 s reactions, 1 miss in 8, occasional decoy taps): all levels stay winnable and each one
-leaves less time to spare than the one before (Level 1: 16 s, 3: 14 s, 6: 12 s, 8: 10 s).
+(0.45–0.85 s reactions, 1 miss in 8, 1 decoy in 12 tapped by mistake): Levels 1, 3 and 6 are always won,
+each leaving less time to spare than the one before (16, 13.5, 12 s). On Level 8 a decoy ends the round, so
+it is measured with a careful player (0.05 s slower, 1 decoy in 50): it wins 42 % of rounds (the rest are
+lost on a decoy or on time), a careless one 21 %. Level 8's rules (level.json): `decoy_fails`,
+`hop` {chance at the start / end of the round, seconds up before moving}, `ramp` {hold, gap, rise factors
+reached at the end}; levels without them play exactly as before.
 
 The visual source of truth is `reference/color_pop_reference.png` (left phone = Home, right phone = Level 1)
 for Home and Level 1, and `reference/sheet/` (the owner's 8-screen sheet and its enlargements) for the
