@@ -1,6 +1,6 @@
 # Color Pop — Android game (work in progress)
 
-**Status: playable test build 0.5 (before Level 10; character quality awaiting the owner's approval).** Home and Levels 1, 3, 6 and 8 are implemented as an Android app
+**Status: playable test build 0.5 (before Level 10; the owner is testing it on their phone).** Home and Levels 1, 3, 6 and 8 are implemented as an Android app
 (Java, no dependencies) and verified by rendering the real screens on 14 phone configurations and
 comparing them with the reference. Do not start over — continue from here.
 
@@ -159,7 +159,11 @@ the 1441x1536 JPEG sheet, where the Level 8 phone is 362 px wide; Level 1's orig
 blur is first inverted (Richardson-Lucy, ~1 art px for characters in focus, 2-2.5 px for the ones the
 mockup paints out of focus, per character in the level scripts), then Real-ESRGAN (x4plus, CPU via
 `pip install ncnn`; models in `design-pipeline/_models/`, not committed, from the Real-ESRGAN ncnn
-release) upscales them, keeping the enlargement's own shapes, colours and lighting. Each character's alpha is tight around it, so no background is
+release) upscales them, keeping the enlargement's own shapes, colours and lighting.
+**Approved by the owner (build 0.5): keep this reconstruction as it is.** The four characters the Level 8
+mockup paints out of focus (yellow and brown-hat decoys, the two far gold miners) stay as reconstructed:
+they must not be redrawn, recoloured or given invented detail; the owner prefers the original artwork.
+No further character-art changes without the owner's request. Each character's alpha is tight around it, so no background is
 carried along when it pops up in another hole, and a far-away character is not blown up in a front
 hole (at most 1.3x, `LevelScreen.pick`).
 
