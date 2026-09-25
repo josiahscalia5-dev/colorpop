@@ -1,6 +1,6 @@
 # Color Pop — Android game (work in progress)
 
-**Status: playable build 0.2.** Home, Level 1, Level 3 and Level 6 are implemented as an Android app
+**Status: playable build 0.3.** Home and Levels 1, 3, 6 and 8 are implemented as an Android app
 (Java, no dependencies) and verified by rendering the real screens on 14 phone configurations and
 comparing them with the reference. Do not start over — continue from here.
 
@@ -9,10 +9,26 @@ Screens:
 2. Level 1 ("HIT THE GREEN ONES!") — done
 3. Level 3 ("HIT THE PURPLE ONES!", combo, swipe hint) — done
 4. Level 6 ("HIT THE STARS!", combo, bombs) — done
-5. Level 8, Level 10, Level Complete, Worlds — art in progress (second reference sheet)
+5. Level 8 ("HIT THE GOLD ONES!", look-alike decoys, SPEED INCREASED!) — done
+6. Level 10, Level Complete, Worlds — to do (second reference sheet)
 
-The levels are played in the order 1 → 3 → 6 (→ 8 → 10); winning one unlocks the next (saved), PLAY
-starts the first level not won yet, and the round-over panel offers NEXT LEVEL.
+The levels are played in the order 1 → 3 → 6 → 8 (→ 10); winning one unlocks the next (saved) and the
+round-over panel offers NEXT LEVEL. PLAY goes straight into Level 1 until another level is unlocked;
+from then on it opens LEVELS (placeholder panel in the HUD style), where every level reached can be
+replayed, the first one not won yet is green and the rest are locked.
+
+Difficulty rises gradually through the rules only (the screens are the references):
+
+| Level | Time | Targets | New challenge |
+|---|---|---|---|
+| 1 | 30 s | 12 | tap the greens (red and yellow don't count) |
+| 3 | 30 s | 12 | combo multiplier, swipe to slice, two kinds of decoys |
+| 6 | 30 s | 15 | bombs cost 3 s; faster pop-ups |
+| 8 | 40 s | 28 | 8 holes, look-alike decoys, quick pops; at 00:20 SPEED INCREASED! (faster, shorter, one more up) |
+
+`ScreenRenderTest.difficultyRisesGraduallyAndStaysFair` plays every level with a simulated human
+(0.45–0.85 s reactions, 1 miss in 8, occasional decoy taps): all levels stay winnable and each one
+leaves less time to spare than the one before (Level 1: 16 s, 3: 14 s, 6: 12 s, 8: 10 s).
 
 The visual source of truth is `reference/color_pop_reference.png` (left phone = Home, right phone = Level 1)
 for Home and Level 1, and `reference/sheet/` (the owner's 8-screen sheet and its enlargements) for the
@@ -128,13 +144,14 @@ calibrated lettering. `_lvl_geom.json` / `_lvl_masks.npz` are the reviewed sourc
   `icon.py` — launcher icons from the reference beaver; `compare_renders.py` — see above.
 - `fonts/LilitaOne-Regular.ttf` is SIL OFL (`OFL.txt`) and ships in the app.
 
-`app-assets/level3/`, `app-assets/level6/` — made by `design-pipeline/levels/level3.py` / `level6.py`
+`app-assets/level3/`, `level6/`, `level8/` — made by `design-pipeline/levels/level3.py` / `level6.py` / `level8.py`
 (shared tools: `screen_art.py`, `levels/export.py`): `bg.png` (empty holes rebuilt from a clean donor hole
 in ring coordinates, everything else by patch fill + Poisson merge; the reference phone's bezel, corners and
 home bar removed; 24 px blurred side padding), character sprites (difference mattes against the rebuilt
 background, so sprites over the background give back the reference), light layers, combo word, pause,
 `level.json`. Each script prints how far the rebuilt reference is from the reference.
+`levels/set_rules.py <level>` writes a script's RULES into its level.json without rebuilding the art.
 
 ## Remaining work
-1. Levels 8 and 10, Level Complete and Worlds screens (second sheet), coins.
+1. Level 10, Level Complete and Worlds screens (second sheet), coins.
 2. Tune the pop-up pacing and the sound/vibration feel on real phones.

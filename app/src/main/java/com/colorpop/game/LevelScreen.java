@@ -41,7 +41,7 @@ final class LevelScreen extends Screen {
     static final int TARGET = 0, DISTRACTOR = 1, BOMB = 2;
     private static final float RISE = 0.22f, SINK = 0.2f, POP = 0.2f, WOBBLE = 0.45f;
     private static final float INTRO_HOLD_UNTIL = 2.95f, SPAWN_FROM = 3.3f;
-    private static final float INTRO_FX_FADE = 2.4f, INTRO_FX_GONE = 3.0f, BURST_TIME = 0.32f;
+    private static final float INTRO_FX_FADE = 2.4f, INTRO_FX_GONE = 3.0f, BURST_TIME = 0.32f, BANNER_TIME = 2.8f;
     private static final int PAUSE_RESUME = 1, PAUSE_HOME = 2, OVER_AGAIN = 3, OVER_HOME = 4, OVER_NEXT = 5;
     private static final int GREEN = 0, RED = 1, YELLOW = 2;       // Level 1 colours
 
@@ -55,6 +55,9 @@ final class LevelScreen extends Screen {
     private final float mixTarget, mixDistractor;    // bombs: the rest
     private final float holdMin, holdSpread, gapMin, gapSpread;
     private final int upEarly, upLate;
+    private final float quick;                        // share of quick pop-ups (0.6 x the hold)
+    private final float speedAt, speedHold, speedGap; // "SPEED INCREASED!" (speedAt < 0: never)
+    private final int speedUp;
     private final JSONObject referenceState;
 
     // ------------------------------------------------------------------ art
@@ -66,7 +69,7 @@ final class LevelScreen extends Screen {
     private final SpriteButton pauseButton;
     private final OutlineText hudText, comboText;
     private final OutlineText.Slot timerSlot, targetSlot, scoreSlot, comboSlot;
-    private final Sprite comboWord, hint, burst;
+    private final Sprite comboWord, hint, burst, banner;
     private final float burstAnchorX, burstAnchorY;
     private final Hole[] holes;              // sorted back to front
     private final Look[][] lookFor;          // Level 1: [colour][hole index]
@@ -78,6 +81,8 @@ final class LevelScreen extends Screen {
     // ------------------------------------------------------------------ round state
     private final Random rnd = new Random();
     private float elapsed, sinceStart, nextSpawn, targetPulse, scorePulse, timerPulse, comboPulse, overT;
+    private float bannerT = -1;                       // time since the banner appeared (< 0: hidden)
+    private boolean fast;                             // sped up
     private int score, targetsLeft, combo, maxCombo;
     private boolean paused, over, won;
     private Ui.Dialog dialog;
@@ -445,6 +450,7 @@ final class LevelScreen extends Screen {
         comboSlot = cb == null ? null : new OutlineText.Slot(cb.optJSONObject("number"));
         comboText = cb == null ? null : new OutlineText(art.font, style(cb.optJSONObject("number")));
         hint = Sprite.of(art, L.optJSONObject("hint"));
+        banner = Sprite.of(art, L.optJSONObject("banner"));
         burst = Sprite.of(art, L.optJSONObject("burst"));
         JSONArray anchor = L.optJSONObject("burst") == null ? null : L.optJSONObject("burst").optJSONArray("anchor");
         burstAnchorX = anchor == null ? 0 : (float) anchor.optDouble(0);
@@ -469,6 +475,12 @@ final class LevelScreen extends Screen {
         JSONArray up = legacy ? null : rules.optJSONArray("up_max");
         upEarly = up == null ? 2 : up.optInt(0);
         upLate = up == null ? 3 : up.optInt(1);
+        quick = legacy ? 0 : (float) rules.optDouble("quick", 0);
+        JSONObject sp = legacy ? null : rules.optJSONObject("speedup");
+        speedAt = sp == null ? -1 : (float) sp.optDouble("at");
+        speedHold = sp == null ? 1 : (float) sp.optDouble("hold", 1);
+        speedGap = sp == null ? 1 : (float) sp.optDouble("gap", 1);
+        speedUp = sp == null ? 0 : sp.optInt("up", 0);
         referenceState = legacy ? null : rules.optJSONObject("reference_state");
 
         JSONObject hs = L.optJSONObject("holes");
@@ -621,6 +633,8 @@ final class LevelScreen extends Screen {
         floaters.clear();
         bursts.clear();
         targetPulse = scorePulse = timerPulse = comboPulse = 0;
+        bannerT = -1;
+        fast = false;
         nextSpawn = 0;
         // opening wave: every character rises into its reference pose and stays a few seconds
         for (int i = 0; i < holes.length; i++) {
@@ -687,7 +701,18 @@ final class LevelScreen extends Screen {
                 elapsed = duration;
                 finish(false);
             } else {
+                if (!fast && speedAt >= 0 && elapsed >= speedAt) {
+                    fast = true;                     // "SPEED INCREASED!"
+                    bannerT = 0;
+                    game.sfx.pop();
+                }
                 spawn(dt);
+            }
+        }
+        if (bannerT >= 0) {
+            bannerT += dt;
+            if (bannerT > BANNER_TIME) {
+                bannerT = -1;
             }
         }
         for (Hole hole : holes) {
@@ -746,7 +771,8 @@ final class LevelScreen extends Screen {
                 up++;
             }
         }
-        if (up < (progress < 0.35f ? upEarly : upLate) && !free.isEmpty()) {
+        int upMax = (progress < 0.35f ? upEarly : upLate) + (fast ? speedUp : 0);
+        if (up < upMax && !free.isEmpty()) {
             Hole hole = free.get(rnd.nextInt(free.size()));
             float r = rnd.nextFloat();
             Look look;
@@ -760,9 +786,12 @@ final class LevelScreen extends Screen {
                 }
                 look = pick(byRole.get(role), hole);
             }
-            float hold = (holdMin + holdSpread * rnd.nextFloat()) * (1 - 0.3f * progress);
+            float hold = (holdMin + holdSpread * rnd.nextFloat()) * (1 - 0.3f * progress) * (fast ? speedHold : 1);
+            if (quick > 0 && rnd.nextFloat() < quick) {
+                hold *= 0.6f;                         // a quick one: less time to react
+            }
             hole.mole.spawn(look, 0, hold);
-            nextSpawn = (gapMin + gapSpread * rnd.nextFloat()) * (1 - 0.25f * progress);
+            nextSpawn = (gapMin + gapSpread * rnd.nextFloat()) * (1 - 0.25f * progress) * (fast ? speedGap : 1);
         } else {
             nextSpawn = 0.1f;
         }
@@ -980,6 +1009,15 @@ final class LevelScreen extends Screen {
         drawSprite(c, burst, intro);
         drawSprite(c, hint, intro);
         drawEffects(c);
+        if (banner != null && bannerT >= 0) {
+            float in = Math.min(1, bannerT / 0.25f);
+            float a = bannerT > BANNER_TIME - 0.4f ? (BANNER_TIME - bannerT) / 0.4f : 1;
+            float k = 0.85f + 0.15f * Ui.easeOutBack(in);
+            int save = c.save();
+            c.scale(k, k, xf.x(banner.x + banner.bitmap.getWidth() / 2f), xf.y(banner.y + banner.bitmap.getHeight() / 2f));
+            drawSprite(c, banner, Math.max(0, Math.min(1, a * in * 1.5f)));
+            c.restoreToCount(save);
+        }
 
         if (comboWord != null && combo >= 2) {
             float k = comboPulse > 0 ? 1 + 0.2f * (float) Math.sin(Math.PI * (1 - comboPulse / 0.3f)) : 1;
@@ -1078,6 +1116,10 @@ final class LevelScreen extends Screen {
             score = referenceState.optInt("score");
             combo = referenceState.optInt("combo");
         }
+        if (speedAt >= 0 && elapsed >= speedAt) {
+            fast = true;
+            bannerT = 1;                          // fully in
+        }
     }
 
     int score() {
@@ -1098,6 +1140,10 @@ final class LevelScreen extends Screen {
 
     int points() {
         return points;
+    }
+
+    boolean combos() {
+        return combos;
     }
 
     float duration() {
@@ -1122,6 +1168,14 @@ final class LevelScreen extends Screen {
 
     float elapsed() {
         return elapsed;
+    }
+
+    boolean spedUp() {
+        return fast;
+    }
+
+    boolean bannerShowing() {
+        return bannerT >= 0;
     }
 
     boolean isOver() {

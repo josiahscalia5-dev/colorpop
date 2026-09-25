@@ -19,6 +19,7 @@ import org.json.JSONObject;
  */
 final class HomeScreen extends Screen {
     private static final int SETTINGS_SOUND = 1, SETTINGS_VIBRATION = 2, SETTINGS_DONE = 3;
+    static final int LEVELS_CLOSE = 100;          // the level buttons' ids are the level numbers
 
     private static final float CONTENT_TOP = 51;   // top of the coin counter
     private final Fit.Backdrop bg;
@@ -30,7 +31,7 @@ final class HomeScreen extends Screen {
     private final Paint paint = new Paint(Paint.FILTER_BITMAP_FLAG | Paint.ANTI_ALIAS_FLAG);
     private final Paint ui = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Ui.Toast toast = new Ui.Toast();
-    private Ui.Dialog settings;
+    private Ui.Dialog settings, levels;
     private SpriteButton pressed;
 
     HomeScreen(GameView game) {
@@ -66,11 +67,15 @@ final class HomeScreen extends Screen {
         if (settings != null) {
             settings.layout(w, h, s, safe);
         }
+        if (levels != null) {
+            levels.layout(w, h, s, safe);
+        }
     }
 
     @Override
     void onShow() {
         settings = null;
+        levels = null;
         pressed = null;
         for (SpriteButton b : buttons) {
             b.pressed = false;
@@ -85,6 +90,9 @@ final class HomeScreen extends Screen {
         toast.update(dt);
         if (settings != null) {
             settings.update(dt);
+        }
+        if (levels != null) {
+            levels.update(dt);
         }
     }
 
@@ -102,12 +110,19 @@ final class HomeScreen extends Screen {
         if (settings != null) {
             settings.draw(c, w, h, game.text, ui);
         }
+        if (levels != null) {
+            levels.draw(c, w, h, game.text, ui);
+        }
     }
 
     @Override
     void touch(MotionEvent e) {
         if (settings != null) {
             onSettings(settings.touch(e, game.sfx));
+            return;
+        }
+        if (levels != null) {
+            onLevels(levels.touch(e, game.sfx));
             return;
         }
         float x = e.getX(), y = e.getY();
@@ -151,7 +166,11 @@ final class HomeScreen extends Screen {
     private void activate(SpriteButton b) {
         game.sfx.click();
         if (b == play) {
-            game.show(game.levelScreen(game.playLevel()));
+            if (game.prefs.unlocked() == 0) {
+                game.show(game.level);              // nothing to choose yet: straight into Level 1
+            } else {
+                openLevels();
+            }
         } else if (b == gear) {
             openSettings();
         } else {
@@ -165,6 +184,33 @@ final class HomeScreen extends Screen {
                 .toggle(SETTINGS_VIBRATION, "VIBRATION", game.prefs.vibration())
                 .button(SETTINGS_DONE, "DONE", true);
         settings.layout(w, h, main.s, game.safe);
+    }
+
+    /**
+     * LEVELS: every level; the ones already reached can be replayed, the first one not won yet is
+     * green, the ones after it are locked.
+     */
+    void openLevels() {
+        levels = new Ui.Dialog("LEVELS");
+        int next = game.playLevel(), unlocked = game.prefs.unlocked();
+        for (int i = 0; i < GameView.LEVELS.length; i++) {
+            int id = GameView.LEVELS[i];
+            if (i <= unlocked) {
+                levels.button(id, "LEVEL " + id, id == next);
+            } else {
+                levels.locked(id, "LEVEL " + id);
+            }
+        }
+        levels.button(LEVELS_CLOSE, "CLOSE", false);
+        levels.layout(w, h, main.s, game.safe);
+    }
+
+    private void onLevels(int id) {
+        if (id == LEVELS_CLOSE) {
+            levels = null;
+        } else if (id > 0) {
+            game.show(game.levelScreen(id));
+        }
     }
 
     private void onSettings(int id) {
@@ -184,6 +230,10 @@ final class HomeScreen extends Screen {
             settings = null;
             return true;
         }
+        if (levels != null) {
+            levels = null;
+            return true;
+        }
         return false;
     }
 
@@ -194,6 +244,10 @@ final class HomeScreen extends Screen {
 
     boolean settingsOpen() {
         return settings != null;
+    }
+
+    Ui.Dialog levelsPanel() {
+        return levels;
     }
 
     Xf mainXf() {

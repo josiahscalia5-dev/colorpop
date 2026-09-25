@@ -24,7 +24,7 @@ final class GameView extends View implements Choreographer.FrameCallback {
     final Sfx sfx;
     final OutlineText text;
     /** The levels, played in this order (the reference designs Levels 1, 3, 6, 8 and 10). */
-    static final int[] LEVELS = {1, 3, 6};
+    static final int[] LEVELS = {1, 3, 6, 8};
 
     final HomeScreen home;
     final LevelScreen level;                   // Level 1

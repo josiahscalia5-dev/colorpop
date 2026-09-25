@@ -73,7 +73,7 @@ final class Ui {
         final String label;
         final boolean green;
         final RectF art = new RectF();
-        boolean pressed;
+        boolean pressed, enabled = true;
         private float scale = 1, velocity;
 
         Button(int id, String label, boolean green) {
@@ -95,6 +95,9 @@ final class Ui {
             RectF r = xf.rect(art.left, art.top, art.width(), art.height(), new RectF());
             int save = c.save();
             c.scale(scale, scale, r.centerX(), r.centerY());
+            if (!enabled) {        // locked: the same pill, dimmed
+                c.saveLayerAlpha(new RectF(r.left - 10 * xf.s, r.top - 10 * xf.s, r.right + 10 * xf.s, r.bottom + 16 * xf.s), 90);
+            }
             pill(c, r, green, xf.s, p);
             float size = 46 * xf.s;
             text.draw(c, label, r.centerX(), r.centerY() - text.digitHeight(size) / 2 - 2 * xf.s,
@@ -177,6 +180,24 @@ final class Ui {
             return this;
         }
 
+        /** A button shown dimmed that cannot be pressed (a locked level). */
+        Dialog locked(int id, String label) {
+            Button b = new Button(id, label, false);
+            b.enabled = false;
+            buttons.add(b);
+            return this;
+        }
+
+        /** Centre of a button in screen px (for tests). */
+        float[] buttonCentre(int id) {
+            for (Button b : buttons) {
+                if (b.id == id) {
+                    return new float[]{xf.x(b.art.centerX()), xf.y(b.art.centerY())};
+                }
+            }
+            return null;
+        }
+
         /** Lays the content out top to bottom around the centre of the safe area. */
         void layout(int w, int h, float s, android.graphics.Rect safe) {
             xf.set(s, (safe.left + w - safe.right) / 2f, (safe.top + h - safe.bottom) / 2f);
@@ -235,7 +256,7 @@ final class Ui {
                 case MotionEvent.ACTION_DOWN:
                     down = null;
                     for (Button b : buttons) {
-                        if (b.art.contains(ax, ay)) {
+                        if (b.enabled && b.art.contains(ax, ay)) {
                             down = b;
                             b.pressed = true;
                         }

@@ -323,11 +323,12 @@ public class ScreenRenderTest {
     }
 
     // ------------------------------------------------------------------ Levels 3, 6 (level.json driven)
-    private static final int[] NEW_LEVELS = {3, 6};
-    /** Phone shapes of the new references (art 702 / 712 x 1486): the render compared with them. */
+    private static final int[] NEW_LEVELS = {3, 6, 8};
+    /** Phone shapes of the new references (art 702 / 712 / 724 wide): the render compared with them. */
     private static final Device[] REFERENCE_SHAPES = {
             new Device("reference", 1080, 2286, "xxhdpi", 0, 0, 0, 0),
-            new Device("reference", 1080, 2254, "xxhdpi", 0, 0, 0, 0)};
+            new Device("reference", 1080, 2254, "xxhdpi", 0, 0, 0, 0),
+            new Device("reference", 1080, 2342, "xxhdpi", 0, 0, 0, 0)};
 
     private static LevelScreen openLevel(GameView v, int id) {
         LevelScreen l = v.levelScreen(id);
@@ -389,7 +390,7 @@ public class ScreenRenderTest {
                     tap(v, xf.x(a[0]), xf.y(a[1]));
                     if (m.look.role == LevelScreen.TARGET) {
                         targets++;
-                        combo++;
+                        combo = l.combos() ? combo + 1 : 1;
                         expected += l.points() * combo;
                         assertEquals(d.name + " L" + id + " target counts", left - 1, l.targetsLeft());
                     } else {
@@ -402,16 +403,17 @@ public class ScreenRenderTest {
                         }
                     }
                     assertEquals(d.name + " L" + id + " score", expected, l.score());
-                    assertEquals(d.name + " L" + id + " combo", combo, l.combo());
+                    assertEquals(d.name + " L" + id + " combo", l.combos() ? combo : 0, l.combo());
                     run(v, 0.05f);
                     if (d == DEVICES[8] && targets == 2 && m.look.role == LevelScreen.TARGET) {
                         render(v, "state_level" + id + "_pop");
                     }
                 }
-                // Level 3: 2 purples, pink, red; Level 6: 3 stars, red, the masked bomb
-                assertEquals(d.name + " L" + id + " targets", id == 3 ? 2 : 3, targets);
+                // Level 3: 2 purples, pink, red; Level 6: 3 stars, red, the masked bomb;
+                // Level 8: 5 gold miners, the yellow and the brown-hat look-alikes
+                assertEquals(d.name + " L" + id + " targets", id == 3 ? 2 : id == 6 ? 3 : 5, targets);
                 assertEquals(d.name + " L" + id + " others", 2, others);
-                assertEquals(d.name + " L" + id + " bombs", id == 3 ? 0 : 1, bombs);
+                assertEquals(d.name + " L" + id + " bombs", id == 6 ? 1 : 0, bombs);
             }
         }
     }
@@ -477,6 +479,122 @@ public class ScreenRenderTest {
             run(v, 1f);
             render(v, "state_level" + id + "_complete");
         }
-        assertEquals(6, v.playLevel());      // the last level so far stays the one PLAY starts
+        assertEquals(8, v.playLevel());      // the last level so far stays the one PLAY starts
+    }
+
+    @Test
+    public void level8SpeedsUpAtTwentySeconds() throws IOException {
+        GameView v = view(DEVICES[8]);
+        LevelScreen l = openLevel(v, 8);
+        run(v, 19.5f);
+        assertFalse(l.spedUp());
+        assertFalse(l.bannerShowing());
+        run(v, 1.0f);                        // 00:20 left
+        assertTrue(l.spedUp());
+        assertTrue(l.bannerShowing());
+        render(v, "state_level8_speedup");
+        run(v, 3.0f);
+        assertFalse("the banner goes away again", l.bannerShowing());
+        assertTrue(l.spedUp());
+    }
+
+    @Test
+    public void levelsPanelReplaysAnyReachedLevel() throws IOException {
+        GameView v = view(DEVICES[8]);
+        SpriteButton play = v.home.controls()[3];
+        v.prefs.setUnlocked(2);             // Levels 1 and 3 won: Level 6 is next, Level 8 locked
+        tap(v, play.xf.x((play.hx0 + play.hx1) / 2), play.xf.y((play.hy0 + play.hy1) / 2));
+        run(v, 0.4f);
+        Ui.Dialog panel = v.home.levelsPanel();
+        assertTrue("PLAY opens LEVELS", panel != null && v.current() == v.home);
+        render(v, "state_home_levels");
+        float[] locked = panel.buttonCentre(8);
+        tap(v, locked[0], locked[1]);
+        run(v, 0.4f);
+        assertTrue("a locked level does not open", v.current() == v.home);
+        float[] one = panel.buttonCentre(1);
+        tap(v, one[0], one[1]);
+        run(v, 0.4f);
+        assertTrue("Level 1 can be played again", v.current() == v.level);
+        v.show(v.home);
+        run(v, 0.5f);
+        tap(v, play.xf.x((play.hx0 + play.hx1) / 2), play.xf.y((play.hy0 + play.hy1) / 2));
+        run(v, 0.4f);
+        float[] three = v.home.levelsPanel().buttonCentre(3);
+        tap(v, three[0], three[1]);
+        run(v, 0.4f);
+        assertTrue("Level 3 can be played again", v.current() == v.levelScreen(3));
+    }
+
+    /**
+     * A human-like player on a phone: reacts 0.45-0.85 s after a character shows (spotting it,
+     * moving the finger), needs 0.25 s between taps, misses one tap in eight and now and then taps
+     * a decoy by mistake. Returns {won, seconds left}.
+     */
+    private static float[] playLikeAHuman(GameView v, LevelScreen l, long seed) {
+        java.util.Random r = new java.util.Random(seed);
+        java.util.Map<LevelScreen.Mole, Float> seen = new java.util.HashMap<>();
+        java.util.Map<LevelScreen.Mole, Boolean> decided = new java.util.HashMap<>();
+        Xf xf = l.xf();
+        float now = 0, lastTap = -1;
+        for (int f = 0; f < 60 * 60 && !l.isOver(); f++) {
+            for (LevelScreen.Hole hole : l.holes()) {
+                LevelScreen.Mole m = hole.mole;
+                if (!m.tappable()) {
+                    seen.remove(m);
+                    decided.remove(m);
+                    continue;
+                }
+                if (!seen.containsKey(m)) {
+                    seen.put(m, now + 0.45f + 0.4f * r.nextFloat());
+                    decided.put(m, m.look.role == LevelScreen.TARGET || r.nextFloat() < 0.08f);
+                }
+                if (decided.get(m) && now >= seen.get(m) && now - lastTap >= 0.25f) {
+                    float[] a = aim(m);
+                    float dx = r.nextFloat() < 0.125f ? 70 : 0;     // a miss
+                    tap(v, xf.x(a[0] + dx), xf.y(a[1]));
+                    lastTap = now;
+                    decided.put(m, false);
+                }
+            }
+            v.step(FRAME);
+            now += FRAME;
+        }
+        return new float[]{l.isWon() ? 1 : 0, l.duration() - l.elapsed()};
+    }
+
+    @Test
+    public void difficultyRisesGraduallyAndStaysFair() {
+        int[] ids = {1, 3, 6, 8};
+        float[] rate = new float[ids.length], spare = new float[ids.length];
+        int runs = 12;
+        StringBuilder report = new StringBuilder();
+        for (int k = 0; k < ids.length; k++) {
+            float wins = 0, left = 0;
+            for (int seed = 0; seed < runs; seed++) {
+                GameView v = view(DEVICES[8]);
+                LevelScreen l = openLevel(v, ids[k]);
+                l.seed(100 + seed);
+                float[] res = playLikeAHuman(v, l, 1000 + seed);
+                wins += res[0];
+                left += res[1];
+            }
+            rate[k] = wins / runs;
+            spare[k] = left / runs;
+            report.append(String.format(Locale.US, "Level %d: won %.0f%%, %.1f s left on average%n", ids[k], rate[k] * 100, left / runs));
+        }
+        System.out.print(report);
+        try {
+            writeLayout("difficulty", report.toString());
+        } catch (IOException ignored) {
+        }
+        for (int k = 0; k < ids.length; k++) {
+            assertTrue("Level " + ids[k] + " must stay winnable: " + report, rate[k] >= 0.4f);
+        }
+        for (int k = 1; k < ids.length; k++) {
+            // each level leaves a good player less time to spare than the one before
+            assertTrue("Level " + ids[k] + " harder than Level " + ids[k - 1] + ": " + report, spare[k] < spare[k - 1]);
+            assertTrue(rate[k] <= rate[k - 1] + 1e-3f);
+        }
     }
 }
