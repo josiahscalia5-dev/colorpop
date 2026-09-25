@@ -235,7 +235,11 @@ def combo_number_region(combo):
     return dilate(fill, 9) & combo & (Y < y1 + 3)
 RULES = {'duration': 30, 'goal': 12, 'target': 'purple', 'combo': True, 'swipe': True, 'bombs': 0.0,
          'mix': {'target': 0.55, 'distractor': 0.45}, 'hold': [1.1, 1.5], 'gap': [0.45, 0.75], 'up_max': [2, 3],
-         'reference_state': {'elapsed': 12.0, 'targets_left': 8, 'score': 320, 'combo': 3}}
+         'reference_state': {'elapsed': 12.0, 'targets_left': 8, 'score': 320, 'combo': 3},
+         # tap-and-fire: a tap launches a shot from the player's side (bottom centre) to the character;
+         # it scores when it lands (purple), a pink or red one only wobbles (levels/level3_fire.py: the hand)
+         'fire': {'from': [351, 1372], 'speed': 2600, 'time': [0.12, 0.3], 'field_top': 560},
+         'demo': {'hole': 'h4', 'press': 1.5}}
 
 
 def export(masks, edges, openings, B, parts):
@@ -302,7 +306,7 @@ def export(masks, edges, openings, B, parts):
     best.pop('text', None)
     level['combo']['number'] = {k: (round(v, 3) if isinstance(v, float) else v) for k, v in best.items()}
     level['rules'] = RULES
-    write_level(NAME, level)
+    write_level(NAME, level)          # then levels/level3_fire.py adds the demonstration hand
     # the reference moment rebuilt from the parts (checked by compare_screens.py)
     for key, t in (('timer', '00:18'), ('target', '8'), ('score', '320')):
         scene = draw_text(scene, t, level['live_text'][key])

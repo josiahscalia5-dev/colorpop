@@ -4,6 +4,7 @@
   bonk.wav  red/yellow character tapped: a soft low boing
   click.wav UI button
   end.wav   round over: three rising notes
+  shoot.wav Level 3 shot launched: a quick rising whoosh with a sparkly zing
 """
 import wave
 import numpy as np
@@ -65,4 +66,16 @@ for i, fr in enumerate(notes):
     tt = t_(dur)
     parts.append((sweep(fr, fr, dur, 'tri') + 0.3 * sweep(fr * 2, fr * 2, dur)) * env(tt, 0.004, 0.08 if i < len(notes) - 1 else 0.16))
 save('end', np.concatenate(parts), 0.7)
+
+d = 0.2
+t = t_(d)
+noise = rng.normal(0, 1, len(t))
+# band of noise that sweeps up (the air), under a bright glide (the energy)
+spec = np.fft.rfft(noise)
+freqs = np.fft.rfftfreq(len(t), 1 / SR)
+air = np.fft.irfft(spec * np.exp(-((freqs - 2600) / 1800) ** 2), len(t))
+shoot = air / (np.abs(air).max() + 1e-9) * np.minimum(t / 0.05, 1) * np.exp(-np.maximum(t - 0.05, 0) / 0.05)
+shoot += 0.45 * sweep(700, 2400, d) * env(t, 0.004, 0.06)
+shoot += 0.2 * sweep(2100, 5200, d) * env(t, 0.002, 0.03)
+save('shoot', shoot, 0.6)
 print('written', OUT)

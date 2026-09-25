@@ -1,13 +1,13 @@
 # Color Pop — Android game (work in progress)
 
-**Status: playable test build 0.7 (before Level 10): Level 8 in its new, owner-approved design, with its harder rules.** Home and Levels 1, 3, 6 and 8 are implemented as an Android app
+**Status: playable test build 0.8 (before Level 10): Level 3 tap-and-fire; Level 8 in its new, owner-approved design, with its harder rules.** Home and Levels 1, 3, 6 and 8 are implemented as an Android app
 (Java, no dependencies) and verified by rendering the real screens on 14 phone configurations and
 comparing them with the reference. Do not start over — continue from here.
 
 Screens:
 1. Welcome / Home screen — done
 2. Level 1 ("HIT THE GREEN ONES!") — done
-3. Level 3 ("HIT THE PURPLE ONES!", combo, swipe hint) — done
+3. Level 3 ("HIT THE PURPLE ONES!", combo, tap-and-fire with a demonstration) — done
 4. Level 6 ("HIT THE STARS!", combo, bombs) — done
 5. Level 8 ("HIT THE GOLD ONES!", look-alike decoys, SPEED INCREASED!) — done, new design (see below)
 6. Level 10, Level Complete, Worlds — to do (second reference sheet)
@@ -22,13 +22,13 @@ Difficulty rises gradually through the rules only (the screens are the reference
 | Level | Time | Targets | New challenge |
 |---|---|---|---|
 | 1 | 30 s | 12 | tap the greens (red and yellow don't count) |
-| 3 | 30 s | 12 | combo multiplier, swipe to slice, two kinds of decoys |
+| 3 | 30 s | 12 | tap-and-fire: a tap launches a purple gem from the player's side (bottom centre) that flies to the tapped character and strikes it -- a purple pops in a purple energy burst and scores when the shot lands, a red or pink one only wobbles (no credit, combo broken), a tap on the ground lands as dust; combo multiplier, swipe fires at every character slid over; an opening demonstration (the hand taps the front purple, its shot strikes it) |
 | 6 | 30 s | 15 | bombs cost 3 s; faster pop-ups |
 | 8 | 40 s | 28 | only gold miners count: tapping a decoy (yellow or brown) fails the round, "WRONG MINER!", and Level 8 starts again; characters change holes while up (more often later); pop-ups get steadily faster; quick pops; at 00:20 SPEED INCREASED! (faster, shorter, one more up) |
 
 `ScreenRenderTest.difficultyRisesGraduallyAndStaysFair` plays every level with a simulated human
 (0.45–0.85 s reactions, 1 miss in 8, 1 decoy in 12 tapped by mistake): Levels 1, 3 and 6 are always won,
-each leaving less time to spare than the one before (16, 13.5, 12 s). On Level 8 a decoy ends the round, so
+each leaving less time to spare than the one before (16, 12.6, 12 s). On Level 8 a decoy ends the round, so
 it is measured with a careful player (0.05 s slower, 1 decoy in 50): it wins 42 % of rounds (the rest are
 lost on a decoy or on time), a careless one 21 %. Level 8's rules (level.json): `decoy_fails`,
 `hop` {chance at the start / end of the round, seconds up before moving}, `ramp` {hold, gap, rise factors
@@ -112,8 +112,12 @@ The build copies the art from `app-assets/` (+ the font) into the APK (`syncArtA
 - `LevelScreen` — every level, from its `level.json` (Level 1 keeps its own format and constants;
   new levels carry `rules`: duration, goal, points, combo, swipe, bomb penalty, pop-up mix and pacing).
   Characters have a role (target / distractor / bomb) and optionally an additive light layer (Level 6
-  stars); combo badge = word sprite + live "Nx"; Level 3 shows its swipe hint and hit flash in the
-  opening wave. Level 1: opening wave in the reference pose (so 00:28 looks like the reference), then
+  stars); combo badge = word sprite + live "Nx". Level 3 (`rules.fire`): a tap launches a shot (a
+  purple gem with a golden trail, drawn in code) that follows the character to its body and strikes it
+  when it lands (0.12–0.3 s; the character waits for it); the purple burst (white-hot core, magenta
+  rays, ring, sparkles, orbs), the flash-and-pop of the struck purple and the demonstration hand
+  (the reference's glove, cut alone and rebuilt at 2x by `levels/level3_fire.py`) replace the static
+  hint and flash pictures. Level 1: opening wave in the reference pose (so 00:28 looks like the reference), then
   random pop-ups (60 % green / 20 % red / 20 % yellow, faster over the round); tap green = pop burst,
   +10, one target less; red/yellow wobble and never count; 30 s; pause freezes everything; round over
   (time up or all 12 greens) → "PLAY AGAIN" / "HOME" (placeholder until the Level Complete screen is

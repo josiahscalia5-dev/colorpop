@@ -13,7 +13,7 @@ final class Sfx {
     private final Prefs prefs;
     private final SoundPool pool;
     private final Vibrator vibrator;
-    private final int pop, bonk, click, end;
+    private final int pop, bonk, click, end, shoot;
 
     Sfx(Context context, Art.Source source, Prefs prefs) {
         this.prefs = prefs;
@@ -28,6 +28,7 @@ final class Sfx {
         bonk = source.loadSound(pool, "sfx/bonk.wav");
         click = source.loadSound(pool, "sfx/click.wav");
         end = source.loadSound(pool, "sfx/end.wav");
+        shoot = source.loadSound(pool, "sfx/shoot.wav");
         vibrator = findVibrator(context);
     }
 
@@ -48,6 +49,11 @@ final class Sfx {
     void bonk() {
         play(bonk, 0.8f);
         buzz(40);
+    }
+
+    /** Level 3: a shot leaves. */
+    void shoot() {
+        play(shoot, 0.55f);
     }
 
     void click() {

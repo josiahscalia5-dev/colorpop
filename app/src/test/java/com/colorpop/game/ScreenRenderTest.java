@@ -399,6 +399,12 @@ public class ScreenRenderTest {
                     int left = l.targetsLeft();
                     float t = l.elapsed();
                     tap(v, xf.x(a[0]), xf.y(a[1]));
+                    if (l.fires()) {
+                        // Level 3: the tap fires a shot; nothing counts until it lands
+                        assertEquals(d.name + " L" + id + " shot fired", 1, l.shotsInFlight());
+                        assertEquals(d.name + " L" + id + " not before it lands", left, l.targetsLeft());
+                        land(v, l);
+                    }
                     if (m.look.role == LevelScreen.TARGET) {
                         targets++;
                         combo = l.combos() ? combo + 1 : 1;
@@ -472,6 +478,100 @@ public class ScreenRenderTest {
             assertTrue(l.isOver());
             assertFalse(l.isWon());
             render(v, "state_level" + id + "_timesup");
+        }
+    }
+
+    /** Steps until every shot in flight has landed (tap-and-fire). */
+    private static void land(GameView v, LevelScreen l) {
+        for (int f = 0; f < 60 && l.shotsInFlight() > 0; f++) {
+            v.step(FRAME);
+        }
+        assertEquals("the shot landed", 0, l.shotsInFlight());
+    }
+
+    private static LevelScreen.Mole visible(LevelScreen l, int role) {
+        for (LevelScreen.Hole hole : l.holes()) {
+            if (hole.mole.tappable() && hole.mole.look.role == role) {
+                return hole.mole;
+            }
+        }
+        return null;
+    }
+
+    @Test
+    public void level3TapFiresAShotThatScoresWhenItLands() throws IOException {
+        for (Device d : new Device[]{DEVICES[8], PIXEL_PRO_XL}) {
+            String pre = d == PIXEL_PRO_XL ? "pixel_level3_fire_" : "state_level3_fire_";
+            GameView v = view(d);
+            LevelScreen l = openLevel(v, 3);
+            assertTrue(l.fires());
+            Xf xf = l.xf();
+            // the opening demonstration: the hand taps the front purple, its shot strikes it (no points)
+            run(v, 1.1f);
+            render(v, pre + "1_demo_hand");
+            for (int f = 0; f < 120 && l.shotsInFlight() == 0; f++) {
+                v.step(FRAME);
+            }
+            assertEquals("the demonstration fires", 1, l.shotsInFlight());
+            run(v, 0.1f);
+            render(v, pre + "2_demo_shot");
+            land(v, l);
+            assertEquals("the demonstration scores nothing", 0, l.score());
+            assertEquals(l.goal(), l.targetsLeft());
+            assertEquals("the demonstration's hit bursts", 1, l.energyBursts());
+            run(v, 0.07f);
+            render(v, pre + "3_demo_hit");
+            // the player: tap a purple -> a shot leaves the player's side, flies to it, strikes, scores
+            LevelScreen.Mole purple = visible(l, LevelScreen.TARGET);
+            assertTrue("a purple is up", purple != null);
+            float[] a = aim(purple);
+            tap(v, xf.x(a[0]), xf.y(a[1]));
+            assertEquals(1, l.shotsInFlight());
+            assertTrue("the purple waits for the shot", purple.locked);
+            tap(v, xf.x(a[0]), xf.y(a[1]));
+            assertEquals("one shot per character", 1, l.shotsInFlight());
+            assertEquals("nothing before it lands", 0, l.score());
+            float[] from = l.fireFrom();
+            run(v, 0.1f);
+            float[] at = l.shotAt();
+            assertTrue("the shot travels: " + at[0] + "," + at[1], at[1] < from[1] - 40 && at[1] > purple.aimY() + 20);
+            render(v, pre + "4_shot");
+            land(v, l);
+            assertEquals("the purple counts", l.goal() - 1, l.targetsLeft());
+            assertEquals("the purple scores", l.points(), l.score());
+            assertEquals(LevelScreen.Mole.POPPED, purple.state);
+            assertTrue("the purple bursts", l.energyBursts() >= 1);
+            run(v, 0.05f);
+            render(v, pre + "5_hit_burst");
+            run(v, 0.1f);
+            render(v, pre + "6_hit_pop");
+            // a red one (or the pink): struck, but no credit
+            LevelScreen.Mole red = visible(l, LevelScreen.DISTRACTOR);
+            assertTrue("a decoy is up", red != null);
+            int bursts = l.energyBursts();
+            a = aim(red);
+            tap(v, xf.x(a[0]), xf.y(a[1]));
+            assertEquals(1, l.shotsInFlight());
+            land(v, l);
+            assertEquals("no credit for a red one", l.goal() - 1, l.targetsLeft());
+            assertEquals("no points for a red one", l.points(), l.score());
+            assertEquals("the combo is broken", 0, l.combo());
+            assertEquals(LevelScreen.Mole.REACT, red.state);
+            assertTrue("no purple burst on a red one", l.energyBursts() <= bursts);
+            run(v, 0.05f);
+            render(v, pre + "7_red_no_credit");
+            // the bare ground: the shot lands there, nothing counts
+            tap(v, xf.x(560), xf.y(1180));
+            assertEquals(1, l.shotsInFlight());
+            land(v, l);
+            assertEquals(l.goal() - 1, l.targetsLeft());
+            assertEquals(l.points(), l.score());
+        }
+        // the other levels hit at once, as before
+        for (int id : new int[]{6, 8}) {
+            GameView v = view(DEVICES[8]);
+            LevelScreen l = openLevel(v, id);
+            assertFalse(l.fires());
         }
     }
 

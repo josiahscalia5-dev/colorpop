@@ -4,9 +4,13 @@ import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.graphics.Path;
+import android.graphics.Color;
 import android.graphics.PorterDuff;
+import android.graphics.PorterDuffColorFilter;
 import android.graphics.PorterDuffXfermode;
+import android.graphics.RadialGradient;
 import android.graphics.RectF;
+import android.graphics.Shader;
 import android.view.MotionEvent;
 
 import org.json.JSONArray;
@@ -43,6 +47,7 @@ final class LevelScreen extends Screen {
     private static final float HOP_SINK = 0.12f, HOP_RISE = 0.16f, FAIL_TIME = 1.6f;
     private static final float INTRO_HOLD_UNTIL = 2.95f, SPAWN_FROM = 3.3f;
     private static final float INTRO_FX_FADE = 2.4f, INTRO_FX_GONE = 3.0f, BURST_TIME = 0.32f, BANNER_TIME = 2.8f;
+    private static final float HIT_TIME = 0.45f, STRUCK_POP = 0.2f, MUZZLE = 0.12f;   // tap-and-fire (Level 3)
     private static final int PAUSE_RESUME = 1, PAUSE_HOME = 2, OVER_AGAIN = 3, OVER_HOME = 4, OVER_NEXT = 5;
     private static final int GREEN = 0, RED = 1, YELLOW = 2;       // Level 1 colours
 
@@ -63,6 +68,11 @@ final class LevelScreen extends Screen {
     private final float hopChance0, hopChance1, hopAfterMin, hopAfterSpread;   // characters changing holes
     private final float rampHold, rampGap, rampRise;  // steady speed-up: factors reached at the end
     private final JSONObject referenceState;
+    // tap-and-fire: a tap launches a shot from the player's side; it scores when it lands
+    private final boolean fires;
+    private final float fireX, fireY, fireSpeed, fireMin, fireMax, fieldTop;
+    private final int demoHole;                       // the opening demonstration taps this hole's character (-1: none)
+    private final float demoPress;
 
     // ------------------------------------------------------------------ art
     private final float contentTop, referenceH;
@@ -73,8 +83,9 @@ final class LevelScreen extends Screen {
     private final SpriteButton pauseButton;
     private final OutlineText hudText, comboText;
     private final OutlineText.Slot timerSlot, targetSlot, scoreSlot, comboSlot;
-    private final Sprite comboWord, hint, burst, banner;
+    private final Sprite comboWord, hint, burst, banner, hand;
     private final float burstAnchorX, burstAnchorY;
+    private final float handTipX, handTipY;
     private final Hole[] holes;              // sorted back to front
     private final Look[][] lookFor;          // Level 1: [colour][hole index]
     private final List<List<Look>> byRole = new ArrayList<>();
@@ -96,12 +107,19 @@ final class LevelScreen extends Screen {
     private final List<Particle> particles = new ArrayList<>();
     private final List<Floater> floaters = new ArrayList<>();
     private final List<Burst> bursts = new ArrayList<>();
+    private final List<Shot> shots = new ArrayList<>();
+    private final List<Hit> hits = new ArrayList<>();
+    private boolean demoOn, demoFired;
+    private float demoOff = -1;                       // when the player's first tap ended the demonstration
 
     private final Paint paint = new Paint(Paint.FILTER_BITMAP_FLAG | Paint.ANTI_ALIAS_FLAG);
     private final Paint light = new Paint(Paint.FILTER_BITMAP_FLAG);
     private final Paint eraser = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint fx = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint ui = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint energy = new Paint(Paint.ANTI_ALIAS_FLAG);   // coloured light (glows, rays)
+    private final Path path = new Path();
+    private final float[] pt = new float[2], pt2 = new float[2];
     private final RectF dst = new RectF(), layer = new RectF();
 
     /** A picture cut from the reference, drawn at its reference position (art px). */
@@ -240,6 +258,7 @@ final class LevelScreen extends Screen {
         float t, delay, hold, cooldown;
         float rise = RISE, sinkTime = SINK;   // this appearance's timing
         float hopAt = -1;                     // seconds up after which it moves to another hole (< 0: never)
+        boolean locked;                       // a shot is on its way to it: it waits for it
         Look look;
 
         Mole(Hole hole) {
@@ -254,6 +273,7 @@ final class LevelScreen extends Screen {
             rise = RISE;
             sinkTime = SINK;
             hopAt = -1;
+            locked = false;
             state = wait > 0 ? WAIT : RISING;
         }
 
@@ -268,6 +288,9 @@ final class LevelScreen extends Screen {
         }
 
         void update(float dt) {
+            if (locked && state != WAIT && state != RISING) {
+                return;                           // held where it is until the shot lands
+            }
             t += dt;
             switch (state) {
                 case WAIT:
@@ -305,7 +328,7 @@ final class LevelScreen extends Screen {
                     }
                     break;
                 case POPPED:
-                    if (t >= POP) {
+                    if (t >= (fires ? STRUCK_POP : POP)) {
                         state = HIDDEN;
                         cooldown = 0.5f;
                     }
@@ -341,7 +364,16 @@ final class LevelScreen extends Screen {
         }
 
         boolean tappable() {
-            return (state == RISING && t > rise * 0.3f) || state == UP;
+            return !locked && ((state == RISING && t > rise * 0.3f) || state == UP);
+        }
+
+        /** Where a shot strikes it: the middle of its body (art px). */
+        float aimX() {
+            return left() + look.width() * scale() / 2;
+        }
+
+        float aimY() {
+            return hole.front() - (hole.front() - top()) * 0.45f;
         }
 
         float scale() {
@@ -384,6 +416,14 @@ final class LevelScreen extends Screen {
                 float u = t / WOBBLE;
                 float angle = (float) Math.sin(u * Math.PI * 5) * 9 * (1 - u);
                 c.rotate(angle, xf.x(hole.cx), xf.y(hole.front()));
+            } else if (state == POPPED && fires) {
+                // struck by a shot: squashed by the impact, springs back, then pops (grows and fades)
+                float s = (float) Math.sin(Math.PI * Math.min(1, t / 0.12f)) * (t < 0.06f ? 1 : 0.6f);
+                c.scale(1 + 0.16f * s, 1 - 0.2f * s, xf.x(hole.cx), xf.y(hole.front()));
+                float u = Math.max(0, (t - 0.06f) / 0.13f);
+                float grow = 1 + 0.3f * easeOut(u);
+                c.scale(grow, grow, dst.centerX(), dst.centerY());
+                return u <= 0 ? 1 : Math.max(0, 1 - (float) Math.pow(u, 1.2));
             } else if (state == POPPED) {
                 float grow = 1 + 0.35f * Math.min(1, t / POP);
                 c.scale(grow, grow, dst.centerX(), dst.centerY());
@@ -404,7 +444,13 @@ final class LevelScreen extends Screen {
             int moved = c.save();
             float alpha = transform(c);
             paint.setAlpha((int) (255 * alpha));
+            // the flash of the hit, then it bursts into light as it goes
+            float flash = state == POPPED && fires ? Math.max(0.85f * fade(t, 0, 0.14f), 0.95f * clamp01((t - 0.07f) / 0.08f)) : 0;
+            if (flash > 0) {
+                paint.setColorFilter(new PorterDuffColorFilter(Color.argb((int) (255 * flash), 255, 246, 255), PorterDuff.Mode.SRC_ATOP));
+            }
             c.drawBitmap(look.bitmap, null, dst, paint);
+            paint.setColorFilter(null);
             paint.setAlpha(255);
             c.restoreToCount(moved);
             c.drawPath(hole.hidden, eraser);   // the front rim stays where it is
@@ -438,6 +484,41 @@ final class LevelScreen extends Screen {
     /** The reference's hit flash (Level 3) where a target was hit. */
     static final class Burst {
         float x, y, scale, t;
+    }
+
+    /**
+     * A shot (tap-and-fire): a purple gem with a golden trail, from the player's side to a
+     * character -- following it if it is still rising -- or to a spot on the ground.
+     */
+    final class Shot {
+        Mole mole;                  // null: a spot on the ground (tx, ty)
+        float tx, ty, t, time, side;
+        boolean demo;               // the opening demonstration's: pops its character, scores nothing
+
+        float endX() {
+            return mole != null ? mole.aimX() : tx;
+        }
+
+        float endY() {
+            return mole != null ? mole.aimY() : ty;
+        }
+
+        /** The point of the flight path at u (0: launch .. 1: the target), art px. */
+        void at(float u, float[] out) {
+            float ex = endX(), ey = endY();
+            float dx = ex - fireX, dy = ey - fireY;
+            // a curve: the control point is pushed sideways, the shot comes round a little
+            float cx = (fireX + ex) / 2 - dy * 0.16f * side, cy = (fireY + ey) / 2 + dx * 0.16f * side;
+            float v = 1 - u;
+            out[0] = v * v * fireX + 2 * v * u * cx + u * u * ex;
+            out[1] = v * v * fireY + 2 * v * u * cy + u * u * ey;
+        }
+    }
+
+    /** The energy burst where a shot struck a purple (and the dull puff where it struck anything else). */
+    static final class Hit {
+        float x, y, r, t, spin;
+        boolean dull;
     }
 
     LevelScreen(GameView game, int id, String dir) {
@@ -483,6 +564,10 @@ final class LevelScreen extends Screen {
         JSONArray anchor = L.optJSONObject("burst") == null ? null : L.optJSONObject("burst").optJSONArray("anchor");
         burstAnchorX = anchor == null ? 0 : (float) anchor.optDouble(0);
         burstAnchorY = anchor == null ? 0 : (float) anchor.optDouble(1);
+        hand = Sprite.of(art, L.optJSONObject("hand"));
+        JSONArray tip = L.optJSONObject("hand") == null ? null : L.optJSONObject("hand").optJSONArray("tip");
+        handTipX = tip == null ? 0 : (float) tip.optDouble(0);
+        handTipY = tip == null ? 0 : (float) tip.optDouble(1);
 
         // rules (Level 1: the original constants)
         duration = legacy ? ROUND : (float) rules.optDouble("duration", 30);
@@ -522,6 +607,18 @@ final class LevelScreen extends Screen {
         rampGap = ramp == null ? 1 : (float) ramp.optDouble("gap", 1);
         rampRise = ramp == null ? 1 : (float) ramp.optDouble("rise", 1);
         referenceState = legacy ? null : rules.optJSONObject("reference_state");
+        JSONObject fire = legacy ? null : rules.optJSONObject("fire");
+        fires = fire != null;
+        JSONArray from = fire == null ? null : fire.optJSONArray("from");
+        fireX = from == null ? 0 : (float) from.optDouble(0);
+        fireY = from == null ? 0 : (float) from.optDouble(1);
+        fireSpeed = fire == null ? 1 : (float) fire.optDouble("speed", 2600);
+        JSONArray ft = fire == null ? null : fire.optJSONArray("time");
+        fireMin = ft == null ? 0.12f : (float) ft.optDouble(0);
+        fireMax = ft == null ? 0.3f : (float) ft.optDouble(1);
+        fieldTop = fire == null ? 0 : (float) fire.optDouble("field_top", 0);
+        JSONObject demo = legacy ? null : rules.optJSONObject("demo");
+        demoPress = demo == null ? -1 : (float) demo.optDouble("press", 1.5);
 
         JSONObject hs = L.optJSONObject("holes");
         List<String> ids = new ArrayList<>();
@@ -543,6 +640,7 @@ final class LevelScreen extends Screen {
             holes[i] = new Hole(i, hs.optJSONObject(sorted[i]));
             holes[i].mole = new Mole(holes[i]);
         }
+        demoHole = demo == null || !fires || hand == null ? -1 : Arrays.asList(sorted).indexOf(demo.optString("hole"));
         // every character as the reference shows it, then the stand-ins for each role and hole
         JSONObject cs = L.optJSONObject("chars");
         List<Look> looks = new ArrayList<>();
@@ -674,6 +772,11 @@ final class LevelScreen extends Screen {
         particles.clear();
         floaters.clear();
         bursts.clear();
+        shots.clear();
+        hits.clear();
+        demoOn = demoHole >= 0;
+        demoFired = false;
+        demoOff = -1;
         targetPulse = scorePulse = timerPulse = comboPulse = 0;
         failing = false;
         failT = 0;
@@ -703,7 +806,9 @@ final class LevelScreen extends Screen {
         over = true;
         won = allHit;
         overT = 0;
+        shots.clear();                                // (any shot still flying has nothing left to win)
         for (Hole hole : holes) {
+            hole.mole.locked = false;
             hole.mole.sink();
         }
         if (allHit) {
@@ -749,7 +854,9 @@ final class LevelScreen extends Screen {
             elapsed += dt;
             if (elapsed >= duration) {
                 elapsed = duration;
-                finish(false);
+                if (shots.isEmpty()) {                // a shot fired in time still counts when it lands
+                    finish(false);
+                }
             } else {
                 if (!fast && speedAt >= 0 && elapsed >= speedAt) {
                     fast = true;                     // "SPEED INCREASED!"
@@ -767,6 +874,31 @@ final class LevelScreen extends Screen {
         }
         for (Hole hole : holes) {
             hole.mole.update(dt);
+        }
+        if (demoOn && !demoFired && !over && !failing && sinceStart >= demoPress + 0.05f) {
+            demoFired = true;                         // the demonstration's hand has pressed: its shot leaves
+            Mole m = holes[demoHole].mole;
+            if (m.tappable()) {
+                fire(m, 0, 0, true);
+            }
+        }
+        for (int i = 0; i < shots.size(); i++) {
+            Shot q = shots.get(i);
+            q.t += dt;
+            if (q.t >= q.time) {
+                shots.remove(i--);
+                land(q);
+                if (over) {
+                    break;
+                }
+            }
+        }
+        for (Iterator<Hit> it = hits.iterator(); it.hasNext(); ) {
+            Hit q = it.next();
+            q.t += dt;
+            if (q.t > HIT_TIME) {
+                it.remove();
+            }
         }
         targetPulse = Math.max(0, targetPulse - dt);
         scorePulse = Math.max(0, scorePulse - dt);
@@ -885,6 +1017,21 @@ final class LevelScreen extends Screen {
         return a + (b - a) * u;
     }
 
+    private static float clamp01(float u) {
+        return Math.max(0, Math.min(1, u));
+    }
+
+    private static float easeOut(float u) {
+        float v = 1 - clamp01(u);
+        return 1 - v * v * v;
+    }
+
+    /** 1 before t0, 0 after t1, smooth in between. */
+    private static float fade(float t, float t0, float t1) {
+        float u = clamp01((t - t0) / (t1 - t0));
+        return 1 - u * u * (3 - 2 * u);
+    }
+
     /**
      * A character ducks and pops up in another free hole a moment later (the rest of its time up
      * there). Returns false (it stays) if no hole is free.
@@ -937,68 +1084,187 @@ final class LevelScreen extends Screen {
         }
     }
 
-    /** A tap (or, where the level allows it, a swipe) at screen point (x, y) during play. */
-    void tap(float x, float y) {
-        if (paused || over || failing) {
+    /**
+     * A tap (down: the finger touched; else, where the level allows it, a swipe going over) at screen
+     * point (x, y) during play. Tap-and-fire levels launch a shot at the character (or, for a tap,
+     * at the spot on the ground); the others hit at once.
+     */
+    void tap(float x, float y, boolean down) {
+        if (paused || over || failing || elapsed >= duration) {
             return;
         }
         float ax = xf.artX(x), ay = xf.artY(y);
+        if (fires && demoOn) {
+            demoOn = false;                           // the player has started: the demonstration steps aside
+            demoOff = sinceStart;
+        }
+        if (fires && down && ay >= fieldTop) {
+            Hit ring = new Hit();                     // where the finger touched
+            ring.x = ax;
+            ring.y = ay;
+            ring.r = 20;
+            ring.dull = true;
+            hits.add(ring);
+        }
         for (int i = holes.length - 1; i >= 0; i--) {   // front-most first
             Mole m = holes[i].mole;
+            if (m.locked && m.visible() && m.hit(ax, ay)) {
+                return;                               // a shot is already on its way to it
+            }
             if (!m.tappable() || !m.hit(ax, ay)) {
                 continue;
             }
-            if (m.look.role == TARGET) {
-                m.state = Mole.POPPED;
-                m.t = 0;
-                if (combos) {
-                    combo++;
-                    maxCombo = Math.max(maxCombo, combo);
-                    if (combo >= 2) {
-                        comboPulse = 0.3f;
-                    }
-                }
-                int gain = points * Math.max(1, combos ? combo : 1);
-                score += gain;
-                targetsLeft--;
-                targetPulse = scorePulse = 0.25f;
-                burst(m);
-                Floater plus = new Floater();
-                plus.x = m.hole.cx;
-                plus.y = m.top() + 10;
-                plus.text = "+" + gain;
-                floaters.add(plus);
-                game.sfx.pop();
-                if (targetsLeft == 0) {
-                    finish(true);
-                }
-            } else if (decoyFails && m.look.role == DISTRACTOR) {
-                fail(m);
+            if (fires) {
+                fire(m, 0, 0, false);
             } else {
-                m.state = Mole.REACT;
-                m.t = 0;
-                combo = 0;
-                if (m.look.role == BOMB) {
-                    elapsed = Math.min(duration - 0.01f, elapsed + bombPenalty);
-                    timerPulse = 0.5f;
-                    Floater minus = new Floater();
-                    minus.x = m.hole.cx;
-                    minus.y = m.top() + 10;
-                    minus.text = "-" + Math.round(bombPenalty) + "s";
-                    floaters.add(minus);
-                    game.sfx.bonk();
-                    game.sfx.buzz(80);
-                } else {
-                    game.sfx.bonk();
-                }
+                strike(m);
             }
             return;
+        }
+        if (fires && down && ay >= fieldTop && ay <= artHMust && ax >= 0 && ax <= artW) {
+            fire(null, ax, ay, false);                // a miss: the shot lands on the ground
+        }
+    }
+
+    /** A shot leaves the player's side for the character m (or the spot ax, ay). */
+    private void fire(Mole m, float ax, float ay, boolean demo) {
+        Shot q = new Shot();
+        q.mole = m;
+        q.tx = ax;
+        q.ty = ay;
+        q.demo = demo;
+        if (m != null) {
+            m.locked = true;
+        }
+        float dx = q.endX() - fireX, dy = q.endY() - fireY;
+        q.time = Math.max(fireMin, Math.min(fireMax, (float) Math.hypot(dx, dy) / fireSpeed));
+        q.side = Math.abs(dx) > 40 ? Math.signum(dx) : (shots.size() % 2 == 0 ? 1 : -1);
+        shots.add(q);
+        for (int i = 0; i < 6; i++) {                 // sparks at the launch
+            Particle p = new Particle();
+            double ang = -Math.PI / 2 + (rnd.nextDouble() - 0.5) * 2.2;
+            float speed = 180 + 220 * rnd.nextFloat();
+            p.x = fireX;
+            p.y = fireY;
+            p.vx = (float) Math.cos(ang) * speed;
+            p.vy = (float) Math.sin(ang) * speed;
+            p.life = 0.25f + 0.15f * rnd.nextFloat();
+            p.star = i % 3 == 0;
+            p.size = p.star ? 10 : 4 + 3 * rnd.nextFloat();
+            p.color = i % 2 == 0 ? 0xffffe27a : 0xffffffff;
+            particles.add(p);
+        }
+        game.sfx.shoot();
+    }
+
+    /** A shot has arrived. */
+    private void land(Shot q) {
+        Mole m = q.mole;
+        if (m == null) {
+            puff(q.tx, q.ty, 0.8f, 0xffcfa477);      // on the ground: a little dust
+            return;
+        }
+        m.locked = false;
+        if (!m.tappable() && m.state != Mole.RISING) {
+            return;
+        }
+        if (q.demo) {
+            m.state = Mole.POPPED;                    // the demonstration: the full hit, no points
+            m.t = 0;
+            burst(m);
+            game.sfx.pop();
+            return;
+        }
+        strike(m);
+    }
+
+    /** m is hit (tapped, or struck by a shot): a target pops and scores, the others react. */
+    private void strike(Mole m) {
+        if (m.look.role == TARGET) {
+            m.state = Mole.POPPED;
+            m.t = 0;
+            if (combos) {
+                combo++;
+                maxCombo = Math.max(maxCombo, combo);
+                if (combo >= 2) {
+                    comboPulse = 0.3f;
+                }
+            }
+            int gain = points * Math.max(1, combos ? combo : 1);
+            score += gain;
+            targetsLeft--;
+            targetPulse = scorePulse = 0.25f;
+            burst(m);
+            Floater plus = new Floater();
+            plus.x = m.hole.cx;
+            plus.y = m.top() + 10;
+            plus.text = "+" + gain;
+            floaters.add(plus);
+            game.sfx.pop();
+            if (targetsLeft == 0) {
+                finish(true);
+            }
+        } else if (decoyFails && m.look.role == DISTRACTOR) {
+            fail(m);
+        } else {
+            if (fires) {
+                puff(m.aimX(), m.aimY(), m.scale(), 0xffe9e4f2);   // struck, but no credit: a dull puff
+            }
+            m.state = Mole.REACT;
+            m.t = 0;
+            combo = 0;
+            if (m.look.role == BOMB) {
+                elapsed = Math.min(duration - 0.01f, elapsed + bombPenalty);
+                timerPulse = 0.5f;
+                Floater minus = new Floater();
+                minus.x = m.hole.cx;
+                minus.y = m.top() + 10;
+                minus.text = "-" + Math.round(bombPenalty) + "s";
+                floaters.add(minus);
+                game.sfx.bonk();
+                game.sfx.buzz(80);
+            } else {
+                game.sfx.bonk();
+            }
+        }
+    }
+
+    /** A small dull impact: a grey ring and a few specks of `color`. */
+    private void puff(float x, float y, float f, int color) {
+        Hit h = new Hit();
+        h.x = x;
+        h.y = y;
+        h.r = 34 * f;
+        h.dull = true;
+        hits.add(h);
+        for (int i = 0; i < 7; i++) {
+            Particle p = new Particle();
+            double ang = rnd.nextDouble() * Math.PI * 2;
+            float speed = (120 + 140 * rnd.nextFloat()) * f;
+            p.x = x;
+            p.y = y;
+            p.vx = (float) Math.cos(ang) * speed;
+            p.vy = (float) Math.sin(ang) * speed - 160;
+            p.life = 0.3f + 0.15f * rnd.nextFloat();
+            p.size = (4 + 4 * rnd.nextFloat()) * f;
+            p.color = color;
+            particles.add(p);
         }
     }
 
     private void burst(Mole m) {
         float f = m.scale();
         float cx = m.hole.cx, cy = m.hole.front() - (m.look.home.front() - m.look.y) * f * 0.45f;
+        if (fires) {
+            // the energy burst: its sparkles and orbs are part of it (drawHit)
+            Hit h = new Hit();
+            h.x = m.aimX();
+            h.y = m.aimY();
+            h.r = m.look.width() * f * 0.42f;
+            h.spin = rnd.nextFloat() * 360;
+            hits.add(h);
+            return;
+        }
         if (burst != null) {
             Burst q = new Burst();
             q.x = cx;
@@ -1042,7 +1308,7 @@ final class LevelScreen extends Screen {
                 pausePressed = true;
                 pauseButton.pressed = true;
             } else {
-                tap(x, y);
+                tap(x, y, true);
                 swiping = swipe;
             }
         } else if (action == MotionEvent.ACTION_MOVE && pausePressed) {
@@ -1050,9 +1316,9 @@ final class LevelScreen extends Screen {
         } else if (action == MotionEvent.ACTION_MOVE && swiping) {
             // slicing through characters: every point of the finger's path counts as a tap
             for (int k = 0; k < e.getHistorySize(); k++) {
-                tap(e.getHistoricalX(0, k), e.getHistoricalY(0, k));
+                tap(e.getHistoricalX(0, k), e.getHistoricalY(0, k), false);
             }
-            tap(e.getX(0), e.getY(0));
+            tap(e.getX(0), e.getY(0), false);
         } else if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
             swiping = false;
             if (pausePressed) {
@@ -1132,8 +1398,11 @@ final class LevelScreen extends Screen {
             c.drawBitmap(fg, null, dst, paint);
         }
         float intro = introFx();
-        drawSprite(c, burst, intro);
-        drawSprite(c, hint, intro);
+        if (!fires) {
+            drawSprite(c, burst, intro);
+            drawSprite(c, hint, intro);
+        }
+        drawHand(c);
         drawEffects(c);
         if (banner != null && bannerT >= 0) {
             float in = Math.min(1, bannerT / 0.25f);
@@ -1179,6 +1448,12 @@ final class LevelScreen extends Screen {
 
     private void drawEffects(Canvas c) {
         float s = xf.s;
+        for (Hit q : hits) {
+            drawHit(c, q);
+        }
+        for (Shot q : shots) {
+            drawShot(c, q);
+        }
         for (Burst q : bursts) {
             float u = q.t / BURST_TIME;
             float k = q.scale * (0.6f + 0.55f * u);
@@ -1217,6 +1492,271 @@ final class LevelScreen extends Screen {
             float y = q.y - 80 * (1 - (1 - q.t / 0.8f) * (1 - q.t / 0.8f));
             hudText.draw(c, q.text, xf.x(q.x), xf.y(y), OutlineText.CENTER, 54 * s, 0.9f, 3.4f * s, 3 * s, (int) (255 * a));
         }
+    }
+
+    // ------------------------------------------------------------------ tap-and-fire
+    private static final int[] SPARK_ANGLE = {20, 75, 130, 170, 215, 260, 300, 340};
+    private static final float[] SPARK_SIZE = {1f, 0.8f, 1.1f, 0.75f, 0.95f, 0.7f, 1.05f, 0.85f};
+    private static final int[] SPARK_COLOUR = {0xffffffff, 0xffffec96, 0xffe8c8ff, 0xffffaae8};
+    private static final float[] ORB_SPEED = {1f, 0.7f, 0.9f, 0.6f, 1.1f, 0.8f, 0.65f, 0.95f, 0.75f, 1f, 0.7f, 0.85f, 0.9f, 0.6f};
+    private static final int[] ORB_COLOUR = {0xffc478ff, 0xffff78de, 0xffffde78};
+
+    /** A 4-pointed (thin 0.2) or 8-pointed star around (x, y), screen px. */
+    private Path star(float x, float y, float r, double rot, float thin) {
+        path.reset();
+        for (int k = 0; k < 8; k++) {
+            double ang = rot + Math.PI / 4 * k;
+            float rr = k % 2 == 0 ? r : r * thin;
+            float px = x + (float) Math.cos(ang) * rr, py = y + (float) Math.sin(ang) * rr;
+            if (k == 0) {
+                path.moveTo(px, py);
+            } else {
+                path.lineTo(px, py);
+            }
+        }
+        path.close();
+        return path;
+    }
+
+    /** A soft round light of colour `color` (alpha = strength). */
+    private void glowDot(Canvas c, float x, float y, float r, int color, float strength) {
+        if (r <= 0.5f || strength <= 0) {
+            return;
+        }
+        energy.setShader(new RadialGradient(x, y, r, new int[]{color, color & 0x00ffffff}, null, Shader.TileMode.CLAMP));
+        energy.setAlpha((int) (255 * Math.min(1, strength)));
+        c.drawCircle(x, y, r, energy);
+        energy.setShader(null);
+        energy.setAlpha(255);
+    }
+
+    /**
+     * The purple burst where a shot struck (t: time since): a white-hot core, magenta rays, an
+     * expanding ring, sparkles and energy orbs flung out. A dull hit only shows a grey ring.
+     */
+    private void drawHit(Canvas c, Hit h) {
+        float s = xf.s, X = xf.x(h.x), Y = xf.y(h.y), R = h.r * s, t = h.t;
+        fx.setStyle(Paint.Style.STROKE);
+        if (h.dull) {
+            float u = easeOut(t / 0.3f), a = fade(t, 0.05f, 0.3f);
+            fx.setStrokeWidth(R * 0.16f * (1 - u) + 1.5f * s);
+            fx.setColor(0xffeeeaf4);
+            fx.setAlpha((int) (210 * a));
+            c.drawCircle(X, Y, R * (0.4f + 0.9f * u), fx);
+            fx.setStyle(Paint.Style.FILL);
+            return;
+        }
+        double spin = Math.toRadians(h.spin);
+        // the expanding ring (glow under a bright line)
+        if (t >= 0.02f && t <= 0.32f) {
+            float u = easeOut((t - 0.02f) / 0.3f), a = fade(t, 0.12f, 0.32f);
+            float rr = R * (0.5f + 1.25f * u), wd = R * (0.16f * (1 - u) + 0.025f);
+            energy.setStyle(Paint.Style.STROKE);
+            energy.setStrokeWidth(wd * 3);
+            energy.setColor(0xffa050ff);
+            energy.setAlpha((int) (150 * a));
+            c.drawCircle(X, Y, rr, energy);
+            energy.setStyle(Paint.Style.FILL);
+            energy.setAlpha(255);
+            fx.setStrokeWidth(wd);
+            fx.setColor(0xfff0daff);
+            fx.setAlpha((int) (255 * a));
+            c.drawCircle(X, Y, rr, fx);
+        }
+        fx.setStyle(Paint.Style.FILL);
+        // the hot core: white, pale gold, hot pink, violet
+        float coreR = R * (0.5f + 0.75f * easeOut(t / 0.07f)) * 1.2f;
+        float coreA = Math.min(1, 0.25f + t / 0.03f) * fade(t, 0.06f, 0.2f);
+        if (coreA > 0) {
+            energy.setShader(new RadialGradient(X, Y, coreR, new int[]{0xffffffff, 0xfffff2b0, 0xffff5ad2, 0xcc9040ff, 0x009040ff},
+                    new float[]{0, 0.14f, 0.36f, 0.62f, 1}, Shader.TileMode.CLAMP));
+            energy.setAlpha((int) (255 * coreA));
+            c.drawCircle(X, Y, coreR, energy);
+            energy.setShader(null);
+            energy.setAlpha(255);
+        }
+        // rays: shoot out, then thin and fade
+        float grow = easeOut(t / 0.11f), rayA = fade(t, 0.10f, 0.24f), thin = 1 - 0.6f * easeOut((t - 0.05f) / 0.2f);
+        if (rayA > 0) {
+            for (int pass = 0; pass < 2; pass++) {
+                Paint p = pass == 0 ? energy : fx;
+                p.setColor(pass == 0 ? 0xffff3cd2 : 0xfffff0c8);
+                p.setAlpha((int) (255 * rayA * (pass == 0 ? 0.8f : 1)));
+                for (int i = 0; i < 10; i++) {
+                    float ln = i % 2 == 0 ? 1 : 0.62f;
+                    double a = spin + Math.toRadians(i * 36 + (i % 2 == 1 ? 9 : -4));
+                    float r0 = R * (0.35f + 0.35f * grow), r1 = R * (0.55f + 1.25f * ln * grow) * (pass == 0 ? 1.08f : 1);
+                    float rm = r0 + (r1 - r0) * 0.3f, w = R * 0.13f * ln * thin * (pass == 0 ? 2.2f : 0.8f);
+                    float ux = (float) Math.cos(a), uy = (float) Math.sin(a);
+                    path.reset();
+                    path.moveTo(X + ux * r0, Y + uy * r0);
+                    path.lineTo(X + ux * rm - uy * w, Y + uy * rm + ux * w);
+                    path.lineTo(X + ux * r1, Y + uy * r1);
+                    path.lineTo(X + ux * rm + uy * w, Y + uy * rm - ux * w);
+                    path.close();
+                    c.drawPath(path, p);
+                }
+            }
+            energy.setAlpha(255);
+        }
+        // sparkles flung out, twinkling
+        if (t > 0.01f) {
+            for (int i = 0; i < SPARK_ANGLE.length; i++) {
+                double a = spin + Math.toRadians(SPARK_ANGLE[i]);
+                float sp = SPARK_SIZE[i];
+                float d = R * (0.4f + 1.55f * sp * easeOut(t / 0.34f));
+                float r = R * 0.26f * sp * Math.min(1, t / 0.05f) * fade(t, 0.12f, 0.42f);
+                if (r > 0.5f) {
+                    float x = X + (float) Math.cos(a) * d, y = Y + (float) Math.sin(a) * d;
+                    glowDot(c, x, y, r * 1.3f, 0xffc070ff, 0.5f);
+                    fx.setColor(SPARK_COLOUR[i % SPARK_COLOUR.length]);
+                    c.drawPath(star(x, y, r, t * 5 + a, 0.18f), fx);
+                }
+            }
+        }
+        // energy orbs: outward, falling a little
+        if (t > 0.015f) {
+            for (int i = 0; i < ORB_SPEED.length; i++) {
+                double a = spin + Math.toRadians(8 + 26 * i);
+                float sp = ORB_SPEED[i];
+                float d = R * (0.45f + 1.9f * sp * easeOut(t / 0.4f));
+                float x = X + (float) Math.cos(a) * d, y = Y + (float) Math.sin(a) * d + R * 0.9f * (t / HIT_TIME) * (t / HIT_TIME);
+                float r = R * 0.065f * (0.7f + 0.5f * sp) * fade(t, 0.2f, HIT_TIME);
+                if (r > 0.4f) {
+                    int col = ORB_COLOUR[i % ORB_COLOUR.length];
+                    glowDot(c, x, y, r * 2.8f, col, 0.45f);
+                    fx.setColor(col);
+                    c.drawCircle(x, y, r, fx);
+                }
+            }
+        }
+    }
+
+    /** A shot in flight: a purple gem with a golden trail; sparks where it left. */
+    private void drawShot(Canvas c, Shot q) {
+        float s = xf.s;
+        if (q.t < MUZZLE) {
+            float u = q.t / MUZZLE;
+            glowDot(c, xf.x(fireX), xf.y(fireY), 46 * s * (0.6f + 0.6f * u), 0xffffd970, 1 - u);
+        }
+        float u = Math.min(1, q.t / q.time);
+        q.at(u, pt);
+        float hx = xf.x(pt[0]), hy = xf.y(pt[1]);
+        float depth = clamp01((fireY - pt[1]) / (fireY - 640));
+        float r = (30 - 11 * depth) * s;                         // smaller further away
+        // the trail: three golden streaks, widest and brightest at the gem
+        final int n = 12;
+        float u0 = Math.max(0, u - 0.5f);
+        energy.setStyle(Paint.Style.STROKE);
+        energy.setStrokeCap(Paint.Cap.ROUND);
+        q.at(u0, pt2);
+        float gx = xf.x(pt2[0]), gy = xf.y(pt2[1]);
+        for (int i = 1; i <= n; i++) {
+            q.at(u0 + (u - u0) * i / n, pt2);
+            float x = xf.x(pt2[0]), y = xf.y(pt2[1]), f = (float) i / n;
+            energy.setStrokeWidth(r * 2.6f * f);
+            energy.setColor(0xffffc040);
+            energy.setAlpha((int) (70 * f));
+            c.drawLine(gx, gy, x, y, energy);
+            gx = x;
+            gy = y;
+        }
+        energy.setStyle(Paint.Style.FILL);
+        energy.setStrokeCap(Paint.Cap.BUTT);
+        energy.setAlpha(255);
+        fx.setStyle(Paint.Style.STROKE);
+        fx.setStrokeCap(Paint.Cap.ROUND);
+        for (int k = -1; k <= 1; k++) {
+            q.at(u0, pt2);
+            float px = xf.x(pt2[0]), py = xf.y(pt2[1]);
+            for (int i = 1; i <= n; i++) {
+                q.at(u0 + (u - u0) * i / n, pt2);
+                float x = xf.x(pt2[0]), y = xf.y(pt2[1]);
+                float dx = x - px, dy = y - py, len = (float) Math.hypot(dx, dy);
+                float f = (float) i / n, off = k * r * 0.5f * f;
+                float nx = len > 0 ? -dy / len * off : 0, ny = len > 0 ? dx / len * off : 0;
+                fx.setStrokeWidth(Math.max(1, r * (k == 0 ? 1.3f : 0.5f) * f));
+                fx.setColor(k == 0 ? Ui.blend(0xffff8a1e, 0xfffff4b4, f * f) : Ui.blend(0xffffb02e, 0xffffffe0, f));
+                fx.setAlpha((int) (255 * Math.min(1, f * 1.3f) * (k == 0 ? 1 : 0.85f)));
+                c.drawLine(px + nx, py + ny, x + nx, y + ny, fx);
+                px = x;
+                py = y;
+            }
+        }
+        fx.setStyle(Paint.Style.FILL);
+        fx.setStrokeCap(Paint.Cap.BUTT);
+        // the gem: violet glow, faceted body with a dark outline, a white glint
+        glowDot(c, hx, hy, r * 2.4f, 0xffb46cff, 0.75f);
+        double spin = q.t * 14;
+        path.reset();
+        for (int k = 0; k < 8; k++) {
+            double a = spin + Math.PI / 4 * k;
+            float rr = k % 2 == 0 ? r : r * 0.88f;
+            float x = hx + (float) Math.cos(a) * rr, y = hy + (float) Math.sin(a) * rr;
+            if (k == 0) {
+                path.moveTo(x, y);
+            } else {
+                path.lineTo(x, y);
+            }
+        }
+        path.close();
+        fx.setShader(new RadialGradient(hx - 0.3f * r, hy - 0.35f * r, 1.4f * r, new int[]{0xffeedcff, 0xffb070ff, 0xff7a2ee0, 0xff3c0f8c},
+                new float[]{0, 0.35f, 0.7f, 1}, Shader.TileMode.CLAMP));
+        c.drawPath(path, fx);
+        fx.setShader(null);
+        fx.setStyle(Paint.Style.STROKE);
+        fx.setStrokeWidth(Math.max(1, 0.13f * r));
+        fx.setColor(0xff2a0b5c);
+        c.drawPath(path, fx);
+        fx.setStrokeWidth(Math.max(1, 0.07f * r));
+        fx.setColor(0x99f0e0ff);
+        for (int k = 0; k < 8; k += 2) {                          // facets
+            double a = spin + Math.PI / 4 * k;
+            c.drawLine(hx + (float) Math.cos(a) * r * 0.42f, hy + (float) Math.sin(a) * r * 0.42f,
+                    hx + (float) Math.cos(a) * r * 0.95f, hy + (float) Math.sin(a) * r * 0.95f, fx);
+        }
+        fx.setStyle(Paint.Style.FILL);
+        fx.setColor(0xffffffff);
+        c.drawPath(star(hx - 0.3f * r, hy - 0.35f * r, 0.55f * r, spin * 0.5, 0.22f), fx);
+    }
+
+    /**
+     * The opening demonstration (reference: the hand tapping the front purple): the glove comes in,
+     * presses on the character, the shot leaves and strikes it; the player's first tap sends it away.
+     */
+    private void drawHand(Canvas c) {
+        if (demoHole < 0) {
+            return;
+        }
+        Mole m = holes[demoHole].mole;
+        float st = sinceStart;
+        float in = clamp01((st - 0.55f) / 0.3f);
+        float out = demoOff >= 0 ? 1 - clamp01((st - demoOff) / 0.2f) : 1 - clamp01((st - 2.1f) / 0.3f);
+        float a = in * out;
+        if (a <= 0 || m.look == null) {
+            return;
+        }
+        float tipX = m.aimX() + 16, tipY = m.aimY() + 12;       // the fingertip, just off the middle of its body
+        float lift = st > demoPress + 0.2f ? easeOut((st - demoPress - 0.2f) / 0.4f) : 0;
+        float ox = (1 - easeOut(in)) * 60 + lift * 30, oy = (1 - easeOut(in)) * 80 + lift * 40;
+        float press = 1 - 0.1f * (float) Math.sin(Math.PI * clamp01((st - demoPress + 0.08f) / 0.16f));
+        float sx = xf.x(tipX + ox), sy = xf.y(tipY + oy);
+        if (st >= demoPress && st < demoPress + 0.3f) {           // the touch: a ring under the fingertip
+            float u = (st - demoPress) / 0.3f;
+            fx.setStyle(Paint.Style.STROKE);
+            fx.setStrokeWidth(3 * xf.s * (1 - u) + 1);
+            fx.setColor(0xffffffff);
+            fx.setAlpha((int) (230 * (1 - u) * a));
+            c.drawCircle(xf.x(tipX), xf.y(tipY), xf.s * (10 + 30 * easeOut(u)), fx);
+            fx.setStyle(Paint.Style.FILL);
+        }
+        int save = c.save();
+        c.scale(press, press, sx, sy);
+        xf.rect(tipX + ox - (handTipX - hand.x), tipY + oy - (handTipY - hand.y), hand.w, hand.h, dst);
+        paint.setAlpha((int) (255 * a));
+        c.drawBitmap(hand.bitmap, null, dst, paint);
+        paint.setAlpha(255);
+        c.restoreToCount(save);
     }
 
     // ------------------------------------------------------------------ for tests
@@ -1314,6 +1854,37 @@ final class LevelScreen extends Screen {
 
     boolean decoyFails() {
         return decoyFails;
+    }
+
+    boolean fires() {
+        return fires;
+    }
+
+    int shotsInFlight() {
+        return shots.size();
+    }
+
+    /** Where the first shot in flight is now (art px), or null. */
+    float[] shotAt() {
+        if (shots.isEmpty()) {
+            return null;
+        }
+        Shot q = shots.get(0);
+        float[] p = new float[2];
+        q.at(Math.min(1, q.t / q.time), p);
+        return p;
+    }
+
+    float[] fireFrom() {
+        return new float[]{fireX, fireY};
+    }
+
+    int energyBursts() {
+        int n = 0;
+        for (Hit h : hits) {
+            n += h.dull ? 0 : 1;
+        }
+        return n;
     }
 
     boolean bannerShowing() {

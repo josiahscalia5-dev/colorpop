@@ -1507,12 +1507,12 @@
    "role": "distractor"
   },
   "purple2": {
-   "file": "level3/char_purple2.png",
-   "x": 269,
-   "y": 881,
-   "w": 129.0,
-   "h": 192.0,
-   "scale": 2,
+   "file": "level3/char_purple.png",
+   "x": 260.63,
+   "y": 858.37,
+   "w": 178.9,
+   "h": 225.32,
+   "scale": 1.76637,
    "hole": "h4",
    "color": "purple",
    "role": "target",
@@ -1701,6 +1701,34 @@
    "targets_left": 8,
    "score": 320,
    "combo": 3
+  },
+  "fire": {
+   "from": [
+    351,
+    1372
+   ],
+   "speed": 2600,
+   "time": [
+    0.12,
+    0.3
+   ],
+   "field_top": 560
+  },
+  "demo": {
+   "hole": "h4",
+   "press": 1.5
   }
+ },
+ "hand": {
+  "file": "level3/hand.png",
+  "x": 447.0,
+  "y": 1019.0,
+  "w": 189.0,
+  "h": 235.0,
+  "scale": 2,
+  "tip": [
+   478.0,
+   1023.0
+  ]
  }
 }
