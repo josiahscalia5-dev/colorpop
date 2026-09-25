@@ -39,3 +39,19 @@ def write_level(name, level):
     out_dir = os.path.join(ROOT, 'app-assets', name)
     os.makedirs(out_dir, exist_ok=True)
     json.dump(level, open(os.path.join(out_dir, 'level.json'), 'w'), indent=1)
+
+
+COMBO_STYLE = {'fill_top': [255, 244, 120], 'fill_bottom': [246, 150, 20], 'outline_color': [48, 18, 6]}
+
+
+def calibrate_combo(I, scene, number):
+    """The yellow "Nx" of a combo badge: size from the ink height, then outline/shadow/tilt/condensing."""
+    x0, y0, x1, y1 = number['box']
+    num = dict(COMBO_STYLE, **number)
+    num.update(size=round((y1 - y0) / 0.72, 1), scale_x=0.95, outline=5.0, shadow=2.0, rotate=0.0)
+    e0 = calibrate_text(I, scene, number['text'], num, {})[0]
+    e, best = calibrate_text(I, scene, number['text'], num,
+                             {'outline': [4.0, 5.5, 7.0], 'shadow': [0.0, 3.0], 'rotate': [-8.0, -5.0, -2.0, 0.0],
+                              'scale_x': [0.9, 1.0, 1.1],
+                              'size': [lambda s, f=f: round(s['size'] * f, 1) for f in (0.94, 1.0, 1.06)]})
+    return e0, e, best

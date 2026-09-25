@@ -1537,38 +1537,38 @@
   "word": {
    "file": "level3/combo_word.png",
    "x": 420,
-   "y": 425,
+   "y": 365,
    "w": 245,
-   "h": 84
+   "h": 144
   },
   "number": {
-   "box": [
-    497,
-    382,
-    572,
-    430
-   ],
-   "align": "center",
    "fill_top": [
-    252,
-    238,
-    150
+    255,
+    244,
+    120
    ],
    "fill_bottom": [
-    244,
+    246,
     150,
-    22
+    20
    ],
    "outline_color": [
-    52,
-    24,
-    8
+    48,
+    18,
+    6
    ],
-   "size": 63.4,
-   "scale_x": 1.04,
+   "box": [
+    500,
+    382,
+    571,
+    431
+   ],
+   "align": "center",
+   "size": 64.0,
+   "scale_x": 1.1,
    "outline": 7.0,
    "shadow": 0.0,
-   "rotate": -6.0
+   "rotate": -5.0
   }
  },
  "pause": {

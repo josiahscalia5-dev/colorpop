@@ -118,6 +118,37 @@ def poisson_merge(dst, src, mask):
     return out
 
 
+def poisson_free(dst, src, mask, fixed, lam=0.02):
+    """Like poisson_merge, but only `fixed` neighbours constrain the border (others are free:
+    no constraint), plus a weak pull (lam) towards src so a region with no fixed neighbours
+    keeps src's tone. For hole interiors next to a bright rim."""
+    ys, xs = np.where(mask)
+    if len(ys) == 0:
+        return dst.copy()
+    idx = -np.ones(mask.shape, np.int64); idx[ys, xs] = np.arange(len(ys))
+    n = len(ys)
+    rows, cols, vals = [], [], []
+    b = lam * src[ys, xs].astype(np.float64); diag = np.full(n, lam)
+    for dy, dx in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+        ny, nx = ys + dy, xs + dx
+        ok = (ny >= 0) & (ny < mask.shape[0]) & (nx >= 0) & (nx < mask.shape[1])
+        nyc, nxc = np.clip(ny, 0, mask.shape[0] - 1), np.clip(nx, 0, mask.shape[1] - 1)
+        inside = ok & mask[nyc, nxc]
+        edge = ok & ~mask[nyc, nxc] & fixed[nyc, nxc]
+        use = inside | edge
+        diag += use
+        b += (src[ys, xs] - src[nyc, nxc]) * inside[:, None]
+        rows.append(np.where(inside)[0]); cols.append(idx[nyc, nxc][inside]); vals.append(-np.ones(inside.sum()))
+        b[edge] += dst[nyc[edge], nxc[edge]]
+    A = sp.csr_matrix((np.concatenate(vals + [diag]), (np.concatenate(rows + [np.arange(n)]),
+                       np.concatenate(cols + [np.arange(n)]))), shape=(n, n))
+    solve = spla.factorized(A.tocsc())
+    out = dst.copy()
+    for c in range(dst.shape[2]):
+        out[ys, xs, c] = solve(b[:, c])
+    return out
+
+
 def merge_region(img, src, mask, pad=3):
     """poisson_merge restricted to the bounding box of mask (fast)."""
     if not mask.any():
@@ -187,6 +218,8 @@ def hole_guidance(img, hole, donors, fill, bad, rho_max=1.12):
     r, t = rho[ys, xs], th[ys, xs]
     for d in donors:
         tt = (np.pi - t) if d.get('mirror') else t
+        if d.get('fold'):          # only the donor's right half (e.g. its left half is off screen)
+            tt = np.where(np.cos(tt) < 0, np.pi - tt, tt)
         mx, my = ring_point(d['inner'], d['outer'], r, tt)
         ix, iy = np.round(mx).astype(int), np.round(my).astype(int)
         ok = (ix >= 0) & (ix < W) & (iy >= 0) & (iy < H)

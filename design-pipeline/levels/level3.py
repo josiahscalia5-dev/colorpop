@@ -115,7 +115,6 @@ DIGITS = {  # live numbers: white glyph box, alignment, the text shown in the re
     'score':  {'box': (270, 396, 345, 433), 'align': 'left', 'text': '320'},
 }
 COMBO_BOX = (424, 366, 662, 506)       # "3x COMBO!" badge
-COMBO_SPLIT_Y = 431                    # above: the live "3x", below: the word COMBO!
 
 # ---------------------------------------------------------------- effects (hint: hand + swipe trail + gem)
 HINT_POLY = [(88, 1150), (250, 1060), (380, 960), (440, 880), (520, 850), (590, 900), (590, 1000),
@@ -218,7 +217,14 @@ def rebuild(masks, frame, dyn, flat):
     return B
 
 
-COMBO_NUMBER = {'box': (497, 382, 572, 430), 'align': 'center', 'text': '3x'}
+COMBO_NUMBER = {'box': (500, 382, 571, 431), 'align': 'center', 'text': '3x'}   # ink of the live number
+
+
+def combo_number_region(combo):
+    """The live number's part of the badge: its yellow fill grown by its outline."""
+    x0, y0, x1, y1 = COMBO_NUMBER['box']
+    fill = rect_mask(I.shape, (x0 - 6, y0 - 6, x1 + 6, y1 + 2)) & (h_ >= 12) & (h_ <= 38) & (s_ > 90) & (v_ > 150)
+    return dilate(fill, 9) & combo & (Y < y1 + 3)
 RULES = {'duration': 30, 'goal': 12, 'target': 'purple', 'combo': True, 'swipe': True, 'bombs': 0.0,
          'mix': {'target': 0.55, 'distractor': 0.45}, 'hold': [1.1, 1.5], 'gap': [0.45, 0.75], 'up_max': [2, 3],
          'reference_state': {'elapsed': 12.0, 'targets_left': 8, 'score': 320, 'combo': 3}}
@@ -262,7 +268,7 @@ def export(masks, edges, openings, B, parts):
     level['burst']['anchor'] = [410, 760]          # centre of the flash
     layers.append((rgba, xy[0], xy[1], None))
     # combo badge: the word as art, the number live
-    word = parts['combo'] & (Y >= COMBO_SPLIT_Y - 2)
+    word = parts['combo'] & ~combo_number_region(parts['combo'])
     rgba, xy = diff_matte(I, B, word)
     level['combo'] = {'word': sprite_entry(OUT, 'combo_word', rgba, xy, rel)}
     layers.append((rgba, xy[0], xy[1], None))
@@ -278,12 +284,8 @@ def export(masks, edges, openings, B, parts):
     level['live_text'] = calibrate_digits(I, scene, DIGITS)
     for k in level['live_text']:
         level['live_text'][k].pop('text', None)
-    num = dict(COMBO_NUMBER, fill_top=[252, 238, 150], fill_bottom=[244, 150, 22], outline_color=[52, 24, 8],
-               size=round((COMBO_NUMBER['box'][3] - COMBO_NUMBER['box'][1]) / 0.72, 1), scale_x=0.95, outline=5.0, shadow=2.0, rotate=0.0)
-    e0 = calibrate_text(I, scene, '3x', num, {})[0]
-    e, best = calibrate_text(I, scene, '3x', num, {'outline': [4.0, 5.5, 7.0], 'shadow': [0.0, 2.5], 'rotate': [-6.0, -3.0, 0.0],
-                                                  'scale_x': [0.88, 0.96, 1.04],
-                                                  'size': [lambda s, f=f: round(s['size'] * f, 1) for f in (0.95, 1.0, 1.05)]})
+    from levels.export import calibrate_combo
+    e0, e, best = calibrate_combo(I, scene, COMBO_NUMBER)
     print('   combo    3x     error %.1f -> %.1f  %s' % (e0, e, {k: best[k] for k in ('size', 'scale_x', 'outline', 'shadow', 'rotate')}))
     best.pop('text', None)
     level['combo']['number'] = {k: (round(v, 3) if isinstance(v, float) else v) for k, v in best.items()}
