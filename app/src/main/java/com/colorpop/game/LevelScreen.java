@@ -39,7 +39,7 @@ final class LevelScreen extends Screen {
     static final float ROUND = 30f;                  // Level 1
     static final int TARGETS = 12, POINTS = 10;      // Level 1
     static final int TARGET = 0, DISTRACTOR = 1, BOMB = 2;
-    private static final float RISE = 0.22f, SINK = 0.2f, POP = 0.2f, WOBBLE = 0.45f;
+    private static final float RISE = 0.22f, SINK = 0.2f, POP = 0.2f, WOBBLE = 0.45f, MAX_ENLARGE = 1.3f;
     private static final float INTRO_HOLD_UNTIL = 2.95f, SPAWN_FROM = 3.3f;
     private static final float INTRO_FX_FADE = 2.4f, INTRO_FX_GONE = 3.0f, BURST_TIME = 0.32f, BANNER_TIME = 2.8f;
     private static final int PAUSE_RESUME = 1, PAUSE_HOME = 2, OVER_AGAIN = 3, OVER_HOME = 4, OVER_NEXT = 5;
@@ -194,6 +194,7 @@ final class LevelScreen extends Screen {
     static final class Look {
         final Bitmap bitmap;
         final float x, y;
+        float density = 1;                // bitmap px per art px (2: drawn from a double-resolution picture)
         final Hole home;
         final int colour, role;
         final boolean introOnly;
@@ -209,6 +210,15 @@ final class LevelScreen extends Screen {
             this.colour = colour;
             this.role = role;
             this.introOnly = introOnly;
+        }
+
+        /** Size in art px. */
+        float width() {
+            return bitmap.getWidth() / density;
+        }
+
+        float height() {
+            return bitmap.getHeight() / density;
         }
     }
 
@@ -342,7 +352,7 @@ final class LevelScreen extends Screen {
                 if (hole.hides(px, py)) {
                     continue;
                 }
-                int sx = (int) ((px - l) / f), sy = (int) ((py - tp) / f);
+                int sx = (int) ((px - l) / f * look.density), sy = (int) ((py - tp) / f * look.density);
                 if (sx >= 0 && sy >= 0 && sx < b.getWidth() && sy < b.getHeight() && (b.getPixel(sx, sy) >>> 24) > 64) {
                     return true;
                 }
@@ -369,7 +379,7 @@ final class LevelScreen extends Screen {
                 return;
             }
             float f = scale();
-            xf.rect(left(), top(), look.bitmap.getWidth() * f, look.bitmap.getHeight() * f, dst);
+            xf.rect(left(), top(), look.width() * f, look.height() * f, dst);
             float m = dst.width() * 0.25f;
             layer.set(dst.left - m, dst.top - m, dst.right + m, dst.bottom + m);
             int save = c.saveLayer(layer, null);
@@ -525,6 +535,7 @@ final class LevelScreen extends Screen {
                 l.glowX = (float) g.optDouble("x");
                 l.glowY = (float) g.optDouble("y");
             }
+            l.density = (float) c.optDouble("scale", 1);
             l.tint = averageColour(l.bitmap);
             looks.add(l);
             nativeLook[home.index] = l;
@@ -797,7 +808,11 @@ final class LevelScreen extends Screen {
         }
     }
 
-    /** A look of the role for this hole: its own if it has one (half the time), else any. */
+    /**
+     * A look of the role for this hole: its own if it has one (half the time), else any that need
+     * not be enlarged much to fit it (a far-away character blown up in a front hole looks soft);
+     * if none, the largest one.
+     */
     private Look pick(List<Look> looks, Hole hole) {
         if (rnd.nextBoolean()) {
             for (Look l : looks) {
@@ -806,7 +821,17 @@ final class LevelScreen extends Screen {
                 }
             }
         }
-        return looks.get(rnd.nextInt(looks.size()));
+        List<Look> fit = new ArrayList<>();
+        Look largest = null;
+        for (Look l : looks) {
+            if (hole.a / l.home.a <= MAX_ENLARGE) {
+                fit.add(l);
+            }
+            if (largest == null || l.home.a > largest.home.a) {
+                largest = l;
+            }
+        }
+        return fit.isEmpty() ? largest : fit.get(rnd.nextInt(fit.size()));
     }
 
     /** A target went back into its hole without being hit: the combo is broken. */

@@ -96,6 +96,7 @@ final class Art {
             if (b == null) {
                 throw new IllegalStateException("unreadable art: " + path);
             }
+            b.setHasMipMap(true);          // smooth when drawn smaller (small phones)
             bitmaps.put(path, b);
         }
         return b;

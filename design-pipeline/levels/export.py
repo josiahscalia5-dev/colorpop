@@ -73,3 +73,45 @@ def calibrate_combo(I, scene, number):
                               'scale_x': [0.9, 1.0, 1.1],
                               'size': [lambda s, f=f: round(s['size'] * f, 1) for f in (0.94, 1.0, 1.06)]})
     return e0, e, best
+
+
+def sharp_sprite(name, I, B, region, core, edge, ext=30, hires=None):
+    """A character sprite at twice the art resolution, as sharp as the Level 1 characters: the body
+    from the super-resolved enlargement (sr.py), the alpha tight around the character (its outline
+    plus a 3 px soft edge: no background carried along when it pops up elsewhere), the colour below
+    the rim continued as before. Returns (rgba at 2x, (x, y) in art px, rgba at 1x for checks)."""
+    import sr
+    region = region & dilate(core, 3)
+    rgba1, (x0, y0), extm = matte_sprite(I, B, region, core, edge, ext=ext, ext_mask=True)
+    h1, w1 = rgba1.shape[:2]
+    if hires is None:
+        hires = sr.hires_canvas(name)[0]
+    Hh, Wh = hires.shape[:2]
+    # the picture part of the sprite (rows inside the screen), super-resolved with a margin
+    bx0, by0 = 2 * x0, 2 * y0
+    bx1, by1 = min(Wh, 2 * (x0 + w1)), min(Hh, 2 * (y0 + h1))
+    m = 24
+    sharp, (sx0, sy0, sx1, sy1), _ = sr.sharp_region(hires, (max(0, bx0 - m), max(0, by0 - m), min(Wh, bx1 + m), min(Hh, by1 + m)))
+    pic = np.zeros((2 * h1, 2 * w1, 3), np.float32)
+    ys, xs = slice(by0 - sy0, by1 - sy0), slice(bx0 - sx0, bx1 - sx0)
+    pic[:by1 - by0, :bx1 - bx0] = sharp[ys, xs]
+    up = cv2.resize(rgba1.astype(np.float32), (2 * w1, 2 * h1), interpolation=cv2.INTER_CUBIC)
+    a2 = np.clip(up[..., 3] / 255.0, 0, 1)
+    solid = cv2.resize((rgba1[..., 3] > 250).astype(np.float32), (2 * w1, 2 * h1), interpolation=cv2.INTER_LINEAR)
+    e2 = cv2.resize(extm.astype(np.float32), (2 * w1, 2 * h1), interpolation=cv2.INTER_LINEAR) > 0.01
+    # the super-resolved picture on the solid body; the matte's own colours on the soft edge and
+    # the continued colour below the rim
+    w = np.clip((solid - 0.3) / 0.6, 0, 1)[..., None] * (~e2)[..., None]
+    w[by1 - by0:] = 0
+    rgb = pic * w + np.clip(up[..., :3], 0, 255) * (1 - w)
+    # a crisp silhouette: the soft edge of the upscaled alpha steepened
+    a2 = np.clip((a2 - 0.12) / 0.76, 0, 1)
+    rgba2 = np.dstack([np.clip(rgb, 0, 255), a2 * 255])
+    return rgba2, (x0, y0), rgba1
+
+
+def sharp_entry(out_dir, name, rgba2, xy, rel):
+    """sprite_entry for a 2x sprite: w/h in art px, "scale": bitmap px per art px."""
+    save_rgba(os.path.join(out_dir, name + '.png'), rgba2)
+    return {'file': f'{rel}/{name}.png', 'x': int(xy[0]), 'y': int(xy[1]), 'w': round(rgba2.shape[1] / 2, 1),
+            'h': round(rgba2.shape[0] / 2, 1), 'scale': 2}

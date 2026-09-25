@@ -271,7 +271,9 @@ RULES = {'duration': 40, 'goal': 28, 'target': 'gold', 'combo': False, 'points':
 
 
 def export(P, B):
-    from levels.export import sprite_entry, calibrate_digits, write_level, clean_frame
+    from levels.export import sprite_entry, calibrate_digits, write_level, clean_frame, sharp_sprite, sharp_entry
+    import sr
+    HIRES = sr.hires_canvas(NAME)[0]
     masks, edges, openings = P['masks'], P['edges'], P['openings']
     rel = NAME
     level = {'id': 8, 'art': {'w': W, 'h': H}, 'content': {'top': 92, 'bottom': 1450}}
@@ -287,12 +289,13 @@ def export(P, B):
     layers = []
     for k, c in CHARS.items():
         hk = c['hole']
-        rgba, xy = matte_sprite(I, B, char_region(k, masks[k]), masks[k], edges[hk], ext=30)
+        rgba2, xy, rgba = sharp_sprite(NAME, I, B, char_region(k, masks[k]), masks[k], edges[hk], ext=30, hires=HIRES)
         if xy[0] == 0 and masks[k][:, 0].any():
             # cut by the screen edge in the reference: a soft edge instead of a straight cut, for
             # when it pops up in a hole away from the edge
             rgba[:, :10, 3] *= np.linspace(0.15, 1, 10)[None, :]
-        e = sprite_entry(OUT, 'char_' + k, rgba, xy, rel)
+            rgba2[:, :20, 3] *= np.linspace(0.15, 1, 20)[None, :]
+        e = sharp_entry(OUT, 'char_' + k, rgba2, xy, rel)
         e.update({'hole': hk, 'color': k.split('_')[0], 'role': c['role']})
         level['chars'][k] = e
         vis = ~hides_mask(I.shape, openings[hk], edges[hk])

@@ -482,6 +482,24 @@ public class ScreenRenderTest {
         assertEquals(8, v.playLevel());      // the last level so far stays the one PLAY starts
     }
 
+    /** Pixel 10/11 Pro XL class phone: 1344 x 2992, camera punch-hole at the top. */
+    static final Device PIXEL_PRO_XL = new Device("pixel_pro_xl", 1344, 2992, "xxxhdpi", 0, 132, 0, 0);
+
+    @Test
+    public void newLevelsOnAPixelProXl() throws IOException {
+        for (int id : NEW_LEVELS) {
+            GameView v = view(PIXEL_PRO_XL);
+            LevelScreen l = openLevel(v, id);
+            run(v, 0.5f);
+            l.referenceMoment();
+            render(v, "pixel_level" + id + "_reference_moment");
+            v = view(PIXEL_PRO_XL);
+            l = openLevel(v, id);
+            run(v, 7.3f);                  // characters popping up in other holes
+            render(v, "pixel_level" + id + "_play");
+        }
+    }
+
     @Test
     public void level8SpeedsUpAtTwentySeconds() throws IOException {
         GameView v = view(DEVICES[8]);

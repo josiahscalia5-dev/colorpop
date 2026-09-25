@@ -1,6 +1,6 @@
 # Color Pop — Android game (work in progress)
 
-**Status: playable build 0.3.** Home and Levels 1, 3, 6 and 8 are implemented as an Android app
+**Status: playable test build 0.4 (before Level 10).** Home and Levels 1, 3, 6 and 8 are implemented as an Android app
 (Java, no dependencies) and verified by rendering the real screens on 14 phone configurations and
 comparing them with the reference. Do not start over — continue from here.
 
@@ -151,6 +151,15 @@ home bar removed; 24 px blurred side padding), character sprites (difference mat
 background, so sprites over the background give back the reference), light layers, combo word, pause,
 `level.json`. Each script prints how far the rebuilt reference is from the reference.
 `levels/set_rules.py <level>` writes a script's RULES into its level.json without rebuilding the art.
+
+Character sharpness: the new levels' characters are exported at twice the art resolution
+(`"scale": 2` in level.json) so they are as crisp as Level 1's on a phone. `design-pipeline/sr.py`
+rebuilds their fine detail with Real-ESRGAN (x4plus, CPU via `pip install ncnn`; models in
+`design-pipeline/_models/`, not committed, from the Real-ESRGAN ncnn release) from the owner's
+enlargement, keeping the enlargement's own shapes and colours (only detail finer than the drawing
+itself comes from the network). Each character's alpha is tight around it, so no background is
+carried along when it pops up in another hole, and a far-away character is not blown up in a front
+hole (at most 1.3x, `LevelScreen.pick`).
 
 ## Remaining work
 1. Level 10, Level Complete and Worlds screens (second sheet), coins.

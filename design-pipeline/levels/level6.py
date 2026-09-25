@@ -58,7 +58,11 @@ BEAMS = {
 }
 # characters: box, hole, role
 CHARS = {
-    'red':    {'box': (300, 548, 460, 690), 'hole': 'hB', 'role': 'distractor'},
+    'red':    {'box': (300, 530, 460, 690), 'hole': 'hB', 'role': 'distractor',
+               # outline traced on the reference (its colour mask's hull took in the ground beside it)
+               'poly': [(352, 561), (362, 550), (371, 543), (382, 545), (388, 557), (396, 560), (412, 568), (425, 580),
+                        (433, 595), (437, 610), (437, 628), (440, 645), (440, 662), (430, 672), (410, 677), (380, 680),
+                        (345, 678), (325, 672), (316, 660), (316, 640), (322, 625), (326, 605), (330, 585), (340, 570)]},
     'masked': {'box': (400, 1000, 660, 1250), 'hole': 'hF', 'role': 'bomb',
                # its face/cheeks are orange-red like the rim: outline measured, refined by GrabCut
                'poly': [(515, 1012), (535, 1022), (575, 1035), (605, 1060), (622, 1095), (632, 1110), (640, 1150),
@@ -114,7 +118,9 @@ def segment_star(k):
     ys, xs = np.where(poly)
     opening = ellipse_mask(I.shape, (cx, cy, a, b)) & (Y < front_arc(st['hole'], X) + 1)
     tips = [p[0] for p in st['poly'][4:7:2]]           # the two lower tips
-    blob = opening & (v_ > 70) & (X > min(tips) - 25) & (X < max(tips) + 25) & (Y > cy - b)
+    rim = (h_ >= 5) & (h_ <= 22) & (s_ > 90) & (v_ < 215)     # the hole's brown back rim
+    mg = 10 if k == 'star_purple' else 25              # the purple star's creature is hidden behind it
+    blob = opening & (v_ > 70) & ~rim & (X > min(tips) - mg) & (X < max(tips) + mg) & (Y > cy - b)
     blob = cv2.morphologyEx(blob.astype(np.uint8), cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8)).astype(bool)
     m = poly | blob
     n, lab, stt, _ = cv2.connectedComponentsWithStats(m.astype(np.uint8), 8)
@@ -294,7 +300,9 @@ RULES = {'duration': 30, 'goal': 15, 'target': 'star', 'combo': True, 'points': 
 
 
 def export(P, B):
-    from levels.export import sprite_entry, calibrate_digits, write_level
+    from levels.export import sprite_entry, calibrate_digits, write_level, sharp_sprite, sharp_entry
+    import sr
+    HIRES = sr.hires_canvas(NAME)[0]
     masks, edges, openings = P['masks'], P['edges'], P['openings']
     rel = NAME
     level = {'id': 6, 'art': {'w': W, 'h': H}, 'content': {'top': 92, 'bottom': 1432}}
@@ -317,8 +325,8 @@ def export(P, B):
         else:
             region = char_region(k, masks[k])
             colour, role = 'red', c['role']
-        rgba, xy = matte_sprite(I, B, region, masks[k], edges[hk], ext=30)
-        e = sprite_entry(OUT, 'char_' + k, rgba, xy, rel)
+        rgba2, xy, rgba = sharp_sprite(NAME, I, B, region, masks[k], edges[hk], ext=30, hires=HIRES)
+        e = sharp_entry(OUT, 'char_' + k, rgba2, xy, rel)
         e.update({'hole': hk, 'color': colour, 'role': role})
         level['chars'][k] = e
         vis = ~hides_mask(I.shape, openings[hk], edges[hk])

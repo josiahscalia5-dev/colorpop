@@ -38,7 +38,11 @@ for k, hd in HOLES.items():
 
 # characters: box, colour, hole, role
 CHARS = {
-    'pink':    {'box': (268, 596, 412, 716), 'colour': 'pink', 'hole': 'h1', 'role': 'distractor'},
+    'pink':    {'box': (268, 596, 412, 716), 'colour': 'pink', 'hole': 'h1', 'role': 'distractor',
+                # outline traced on the reference (the pink hit flash beside it has the same colour)
+                'poly': [(318, 607), (331, 609), (342, 615), (351, 623), (359, 633), (363, 646), (368, 660), (374, 672),
+                         (379, 688), (378, 704), (364, 713), (330, 714), (300, 712), (284, 706), (281, 690), (283, 670),
+                         (288, 655), (290, 640), (296, 625), (306, 614)]},
     'purple':  {'box': (52, 658, 232, 832), 'colour': 'purple', 'hole': 'h2', 'role': 'target'},
     'red':     {'box': (478, 658, 652, 830), 'colour': 'red', 'hole': 'h3', 'role': 'distractor'},
     'purple2': {'box': (262, 840, 432, 1045), 'colour': 'purple', 'hole': 'h4', 'role': 'target', 'intro_only': True},
@@ -63,6 +67,10 @@ def front_arc(hole, x):
 def segment_char(k):
     c = CHARS[k]
     box = c['box']
+    if 'poly' in c:
+        pm = poly_mask(I.shape, c['poly'])
+        fa = front_arc(c['hole'], X)
+        return grabcut(I, box, fg=erode(pm, 7) & (Y < fa - 3), pr_fg=dilate(pm, 3), bg=(Y > fa + 8) | ~dilate(pm, 8))
     cm = colour_mask(c['colour']) & rect_mask(I.shape, box)
     cm = cv2.morphologyEx(cm.astype(np.uint8), cv2.MORPH_OPEN, np.ones((3, 3), np.uint8)).astype(bool)
     n, lab, st, _ = cv2.connectedComponentsWithStats(cm.astype(np.uint8), 8)
@@ -232,7 +240,9 @@ RULES = {'duration': 30, 'goal': 12, 'target': 'purple', 'combo': True, 'swipe':
 
 def export(masks, edges, openings, B, parts):
     import json
-    from levels.export import sprite_entry, calibrate_digits, write_level
+    from levels.export import sprite_entry, calibrate_digits, write_level, sharp_sprite, sharp_entry
+    import sr
+    HIRES = sr.hires_canvas(NAME)[0]
     rel = NAME
     level = {'id': 3, 'art': {'w': W, 'h': H}, 'content': {'top': 92, 'bottom': 1380}}
     from levels.export import clean_frame
@@ -251,8 +261,8 @@ def export(masks, edges, openings, B, parts):
     for k, c in CHARS.items():
         hk = c['hole']
         region = char_region(k, masks[k])
-        rgba, xy = matte_sprite(I, B, region, masks[k], edges[hk], ext=30)
-        e = sprite_entry(OUT, 'char_' + k, rgba, xy, rel)
+        rgba2, xy, rgba = sharp_sprite(NAME, I, B, region, masks[k], edges[hk], ext=30, hires=HIRES)
+        e = sharp_entry(OUT, 'char_' + k, rgba2, xy, rel)
         e.update({'hole': hk, 'color': c['colour'], 'role': c['role']})
         if c.get('intro_only'):
             e['intro_only'] = True

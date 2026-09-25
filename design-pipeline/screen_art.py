@@ -492,12 +492,14 @@ def composite(base, layers):
     return out
 
 
-def matte_sprite(img, bg, region, core, edge=None, ext=30, lo=8.0, hi=36.0):
+def matte_sprite(img, bg, region, core, edge=None, ext=30, lo=8.0, hi=36.0, ext_mask=False):
     """A character: difference matte of img over bg inside region, solid (alpha 1) on core. With
     an edge, the body colour continues `ext` px straight down below the front rim (so it can rise
-    above its reference pose without a gap; the rim clip hides it at rest)."""
+    above its reference pose without a gap; the rim clip hides it at rest). ext_mask: also return
+    where the sprite holds that continued colour instead of the picture."""
     rgba, (x0, y0) = diff_matte(img, bg, region, lo, hi)
     h, w = rgba.shape[:2]
+    extm = np.zeros((h + (ext + 4 if edge is not None else 0), w), bool)
     c = core[y0:y0 + h, x0:x0 + w]
     rgba[..., :3][c] = img[y0:y0 + h, x0:x0 + w][c]
     rgba[..., 3][c] = 255
@@ -518,6 +520,9 @@ def matte_sprite(img, bg, region, core, edge=None, ext=30, lo=8.0, hi=36.0):
             for yy in range(max(0, start), rgba.shape[0]):
                 rgba[yy, j, :3] = src * (1 - 0.35 * max(0, yy - start) / ext)
                 rgba[yy, j, 3] = 255
+                extm[yy, j] = True
+    if ext_mask:
+        return rgba, (int(x0), int(y0)), extm
     return rgba, (int(x0), int(y0))
 
 
